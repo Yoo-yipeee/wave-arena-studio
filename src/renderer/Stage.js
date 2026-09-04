@@ -159,12 +159,18 @@ export function detectQuality() {
   // whole session, which is why this build could come up soft on a good
   // machine. With no real measurement, assume desktop and let the governor take
   // it back if that was optimistic.
-  const w = window.innerWidth || document.documentElement.clientWidth || 0;
-  const h = window.innerHeight || document.documentElement.clientHeight || 0;
+  const sw = (window.screen && window.screen.width) || 0;
+  const sh = (window.screen && window.screen.height) || 0;
+  const w = window.innerWidth || document.documentElement.clientWidth || sw;
+  const h = window.innerHeight || document.documentElement.clientHeight || sh;
 
   const mobile = /Android|iPhone|iPad|iPod|IEMobile|Opera Mini/i.test(ua)
     || (navigator.maxTouchPoints > 1 && w > 0 && w < 1100);
-  const small = w > 0 && h > 0 && Math.min(w, h) < 620;
+  // A device that is genuinely small also has a small SCREEN. A viewport that
+  // is small only because the document has not finished laying out does not —
+  // and screen dimensions are available immediately, before any layout, which
+  // is exactly the moment this runs.
+  const small = Math.min(w, h) < 620 && Math.min(sw || w, sh || h) < 900;
   const weak = (navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 4;
 
   if (mobile || small || weak) {
