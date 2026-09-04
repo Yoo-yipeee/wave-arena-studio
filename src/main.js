@@ -14,7 +14,7 @@ import { Choreographer } from './performance/Choreographer.js';
 import { TrackPlan } from './performance/TrackPlan.js';
 import { SongIdentity } from './performance/SongIdentity.js';
 import { WaterArena } from './water/WaterArena.js';
-import { Stage, CinematicCamera, detectQuality } from './renderer/Stage.js';
+import { Stage, CinematicCamera, detectQuality, QualityGovernor } from './renderer/Stage.js';
 import { UI } from './ui/UI.js';
 import { Touch } from './ui/Touch.js';
 import { Recorder } from './ui/Recorder.js';
@@ -35,11 +35,18 @@ const touch = new Touch(canvas, stage.camera, choreo, arena.radius);
 
 const recorder = new Recorder(canvas, engine);
 recorder.onState = (on) => ui.setRecording(on);
-recorder.onClip = (url, name) => ui.showClip(url, name);
+// The fourth argument is the File, and dropping it left the SHARE button
+// permanently hidden — which on a phone is the entire path from "that looked
+// good" to it actually being posted.
+recorder.onClip = (url, name, bytes, file) => ui.showClip(url, name, file);
+
+// Keep the frame rate honest on whatever machine this turns out to be.
+const governor = new QualityGovernor(stage, arena);
+
 const settings = new Settings();
 settings.onChange = (v) => {
   camera.cuts = v.camera === 'cuts';
-  arena.caustics.visible = v.caustics === 'on';
+  arena.setCausticsWanted(v.caustics === 'on');
   touch.enabled = v.ripples === 'on';
   if (identity) { identity.paletteMode = v.palette; identity._recompute(); arena.setIdentity(identity); }
 };
@@ -54,12 +61,31 @@ ui.on.record = () => {
 arena.setPixelRatio(stage.pixelRatio);
 stage.onResize = (pr) => { arena.setPixelRatio(pr); ui.redrawPeaks(); };
 
+// A lost GL context is otherwise indistinguishable from the app having crashed:
+// the canvas simply stays black and nothing is logged. Say so, and drop to the
+// cheapest settings on the way back so the same load does not lose it again.
+stage.onContextLost = () => ui.toast('GRAPHICS CONTEXT LOST — RECOVERING');
+stage.onContextRestored = () => {
+  governor._apply(Math.max(governor.level, 3));
+  ui.toast('RECOVERED');
+};
+
+// The module got this far, so three.js resolved and the renderer built.
+document.body.classList.add('booted');
+
 let analyser = null;
 let identity = null;
 let awake = 0.22;          // how "alive" the field is: landing 0.22 -> performance 1
 let started = false;
 let looping = false;       // a track is loaded and the arena is live
 let last = performance.now();
+
+// Settings.apply() runs inside the Settings constructor, before onChange can be
+// assigned, so nothing was ever applied at startup: a saved preference showed
+// as selected in the panel and only took effect once it was toggled. It has to
+// happen down here — the handler closes over `identity`, which is declared
+// above but is still in its temporal dead zone until this point.
+settings.apply();
 
 // Idle music state so the arena breathes before anything is loaded.
 const idleMusic = {
@@ -241,6 +267,7 @@ function frame(now) {
   const dt = Math.min(rawDt, 1 / 20);
   const dtSmooth = Math.min(rawDt, 0.5);
   last = now;
+  governor.update(rawDt);
 
   const music = analyser
     ? analyser.update(dtSmooth, engine.currentTime, engine.progress, engine.playing)
@@ -265,7 +292,12 @@ function frame(now) {
   // a damped value after a track ended and crippled every subsequent replay.
   const awakeTarget = started ? 1 : 0.22;
   awake += (awakeTarget - awake) * (1 - Math.exp(-dtSmooth * (awakeTarget > awake ? 0.9 : 1.6)));
-  stage.fade += (1 - stage.fade) * (1 - Math.exp(-dt * 1.1));   // fade up from black
+  // dtSmooth, not dt. Feeding the clamped simulation dt to the opening fade
+  // made the time-to-visible depend on the frame rate: at ten frames a second
+  // the clamp discarded half of every elapsed second and the arena sat black
+  // for the better part of ten, which reads as a broken page rather than as a
+  // fade. Exponential smoothing is stable at any step, so it wants real time.
+  stage.fade += (1 - stage.fade) * (1 - Math.exp(-dtSmooth * 1.4));
 
   arena.syncImpulses(choreo.impulseA, choreo.impulseB, choreo.time);
   arena.update(dt, music, perf, awake, dtSmooth);
@@ -290,7 +322,8 @@ requestAnimationFrame((t) => { last = t; frame(t); });
 
 // Expose the pipeline for tinkering from the console.
 window.WAVE = {
-  engine, arena, choreo, stage, camera, ui, touch, recorder, settings, THREE,
+  engine, arena, choreo, stage, camera, ui, touch, recorder, settings, governor, THREE,
+  get perf() { return governor.describe(); },
   get music() { return analyser?.state; },
   get analyser() { return analyser; },
   get plan() { return choreo.plan?.describe(); },

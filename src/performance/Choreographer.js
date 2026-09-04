@@ -93,7 +93,11 @@ const HEIGHT_GAMMA = 1.85;
 const BUILD_LEAD = 8.0;
 
 const MAX_IMPULSES = 8;
-const MIN_SECTION_TIME = { silence: 0.5, intro: 1.5, verse: 2.5, build: 1.5, drop: 5.0, chorus: 3.0, break: 2.0, outro: 3.0 };
+// Minimum dwell, seconds. Verse and chorus are long enough that a section has
+// to mean something: below about four seconds the arena reads as reacting to
+// bars rather than to structure. A drop bypasses this entirely — it has to land
+// on the beat it belongs to — and so does silence.
+const MIN_SECTION_TIME = { silence: 0.5, intro: 1.5, verse: 4.0, build: 1.5, drop: 5.0, chorus: 4.5, break: 2.5, outro: 3.0 };
 
 export class Choreographer {
   constructor() {
@@ -157,6 +161,7 @@ export class Choreographer {
     this._anticipation = 0;
     this._voiceSeen = 0;
     this._firedDrop = -1;
+    this._quietFor = 0;
     this.events.length = 0;
 
     const p = this.p;
@@ -182,7 +187,12 @@ export class Choreographer {
   }
 
   decideSection(m) {
-    if (!m.playing || m.silence > 0.75) return 'silence';
+    if (!m.playing) return 'silence';
+    // Silence has to LAST. A single quiet analysis frame is a breath between
+    // lines, the gap before a downbeat, or the tail of a reverb — and treating
+    // each one as the song stopping made the opening of a vocal-led track flap
+    // between 'silence' and 'build' six times in nine seconds.
+    if (this._quietFor > 0.55) return 'silence';
 
     const e = m.energyShort;
     const el = Math.max(m.energyLong, 0.02);
@@ -211,10 +221,21 @@ export class Choreographer {
       // test can catch.
       if (toDrop !== null && toDrop <= BUILD_LEAD) return 'build';
 
-      if (L < 0.46) return t < 24 ? 'intro' : 'break';
-      if (L > 0.86) return 'chorus';
-      if (this._sinceDrop < 16 && L > 0.70) return 'chorus';
-      if (L > 0.50) return 'verse';
+      // Every threshold below is a BAND, not a line.
+      //
+      // A modern master sits within a few dB of its own plateau for most of its
+      // length, so a bare threshold gets crossed back and forth continuously: on
+      // Believer this flipped verse/chorus every three seconds for half a
+      // minute, which is not choreography, it is a meter twitching. Sections
+      // people can feel are ten to thirty seconds long, so a section is harder
+      // to leave than it was to enter and the reading has to actually commit.
+      const inChorus = this.section === 'chorus';
+      const inVerse = this.section === 'verse';
+
+      if (L < (inVerse || inChorus ? 0.38 : 0.46)) return t < 24 ? 'intro' : 'break';
+      if (L > (inChorus ? 0.74 : 0.86)) return 'chorus';
+      if (this._sinceDrop < 16 && L > (inChorus ? 0.60 : 0.70)) return 'chorus';
+      if (L > (inVerse ? 0.42 : 0.50)) return 'verse';
       return 'break';
     }
 
@@ -322,6 +343,11 @@ export class Choreographer {
     }
     this._lastTime = m.time;
     if (this._seekGuard > 0) this._seekGuard -= dt;
+
+    // How long the track has been quiet, in music time. Reset the instant sound
+    // returns, so the arena wakes on the first frame of a re-entry even though
+    // it took half a second to accept that it had stopped.
+    this._quietFor = (m.silence > 0.75) ? this._quietFor + dt : 0;
 
     this._riseHist.push(m.energyShort);
     if (this._riseHist.length > 300) this._riseHist.shift();     // ~5 s

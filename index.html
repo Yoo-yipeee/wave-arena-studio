@@ -247,6 +247,18 @@
   .clip-actions a:hover,.clip-actions button:hover{border-color:rgba(95,217,255,.75);background:rgba(20,70,120,.28)}
 
 
+  /* ---------- boot failure ---------- */
+  #bootfail{
+    position:fixed;inset:0;z-index:60;display:none;
+    align-items:center;justify-content:center;flex-direction:column;gap:18px;
+    background:rgba(0,2,8,.92);padding:8vw;text-align:center;
+  }
+  #bootfail.on{display:flex}
+  #bootfail .bf-title{font-size:10px;letter-spacing:.42em;text-indent:.42em;color:#ff8f6b}
+  #bootfail .bf-body{
+    font-size:9px;letter-spacing:.2em;line-height:2.2;color:rgba(220,238,255,.6);max-width:46ch;
+  }
+
   /* ---------- controls ---------- */
   .ctl{
     background:none;border:0;padding:7px;cursor:pointer;color:rgba(220,238,255,.45);
@@ -500,6 +512,38 @@
   </div>
   <input type="file" id="fileInput" accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac" hidden />
 
+  <!-- If the engine never boots, say why. Until now a blocked CDN, a browser
+       without WebGL or a module error all produced exactly the same thing: a
+       black page with a landing screen whose buttons quietly did nothing. -->
+  <div id="bootfail">
+    <div class="bf-title">THE ARENA COULD NOT START</div>
+    <div class="bf-body" id="bootfailBody"></div>
+  </div>
+
   <script type="module" src="./src/main.js"></script>
+  <script>
+  (function () {
+    var reason = '';
+    try {
+      var c = document.createElement('canvas');
+      if (!(c.getContext('webgl2') || c.getContext('webgl'))) {
+        reason = 'THIS BROWSER HAS NO WEBGL. TRY CHROME, EDGE, SAFARI OR FIREFOX, AND CHECK THAT HARDWARE ACCELERATION IS ON.';
+      }
+    } catch (e) {
+      reason = 'THIS BROWSER HAS NO WEBGL.';
+    }
+    window.addEventListener('error', function (e) {
+      if (!reason && e && (e.filename || '').indexOf('three') > -1) {
+        reason = 'THREE.JS COULD NOT BE LOADED FROM THE CDN. A NETWORK BLOCK OR AN OFFLINE CONNECTION WILL DO THIS.';
+      }
+    }, true);
+    setTimeout(function () {
+      if (document.body.classList.contains('booted')) return;
+      document.getElementById('bootfailBody').textContent =
+        reason || 'THE ENGINE DID NOT LOAD. RELOADING USUALLY FIXES IT; IF NOT, THE BROWSER CONSOLE WILL SAY WHY.';
+      document.getElementById('bootfail').classList.add('on');
+    }, 6000);
+  })();
+  </script>
 </body>
 </html>

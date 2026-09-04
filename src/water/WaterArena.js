@@ -55,15 +55,9 @@ export class WaterArena {
     this.spectrumTex.wrapS = THREE.ClampToEdgeWrapping;
     this.spectrumTex.needsUpdate = true;
 
-    // 12 pitch classes, wrapped so pc 11 is adjacent to pc 0 on the circle
-    this.chromaData = new Uint8Array(12);
-    this.chromaTex = new THREE.DataTexture(this.chromaData, 12, 1, THREE.RedFormat);
-    this.chromaTex.minFilter = THREE.LinearFilter;
-    this.chromaTex.magFilter = THREE.LinearFilter;
-    this.chromaTex.wrapS = THREE.RepeatWrapping;
-    this.chromaTex.needsUpdate = true;
-
-    this.U = createFieldUniforms(THREE, this.spectrumTex, this.chromaTex, this.radius);
+    this.U = createFieldUniforms(THREE, this.spectrumTex, this.radius);
+    // 12 pitch classes. A plain uniform array, not a texture — see field.js.
+    this.chromaData = this.U.uChromaV.value;
     this._tone = PALETTE.mid.clone();
     this._toneTarget = PALETTE.mid.clone();
     this._toneScratch = PALETTE.mid.clone();
@@ -187,7 +181,12 @@ export class WaterArena {
     // Light focused through the surface onto the bottom. It puts something
     // BELOW the water instead of only a mirror, which is most of what makes a
     // pool read as having depth rather than being a sheet.
-    const cGrid = quality.tier === 'low' ? 96 : 168;
+    // The caustic vertex shader evaluates the height field FIVE times per
+    // vertex to take a laplacian, so this grid is the single most expensive
+    // number in the arena: at 168 it cost more field evaluations than the water
+    // body itself. The result is a soft, blurred, additive pattern, so a coarser
+    // grid is very nearly invisible and pays for itself several times over.
+    const cGrid = quality.causticGrid || (quality.tier === 'low' ? 80 : 112);
     const cGeo = new THREE.PlaneGeometry(this.radius * 2.3, this.radius * 2.3, cGrid, cGrid);
     cGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), this.radius * 3);
     this.causticMat = new THREE.ShaderMaterial({
@@ -225,6 +224,23 @@ export class WaterArena {
   }
 
   setPixelRatio(pr) { this.mistMat.uniforms.uPixelRatio.value = pr; }
+
+  /**
+   * Visibility has two independent owners: the viewer, who picked a setting,
+   * and the governor, which is trying to hold the frame rate. Both have to
+   * agree before something is drawn, or whichever spoke last wins and toggling
+   * a setting silently undoes a performance decision (or the reverse).
+   */
+  setCausticsAllowed(on) { this._causticsOk = on; this._syncVisibility(); }
+  setCausticsWanted(on) { this._causticsWant = on; this._syncVisibility(); }
+  setReflectionAllowed(on) { this._reflectOk = on; this._syncVisibility(); }
+
+  _syncVisibility() {
+    this.caustics.visible = this._causticsOk !== false && this._causticsWant !== false;
+    const r = this._reflectOk !== false;
+    this.bodyRefl.visible = r;
+    this.linesRefl.visible = r;
+  }
 
   /** Hand the arena the song's world. */
   setIdentity(identity) {
@@ -277,9 +293,8 @@ export class WaterArena {
     if (h) {
       const c = h.chroma;
       for (let i = 0; i < 12; i++) {
-        this.chromaData[i] = Math.max(0, Math.min(255, c[i] * 255)) | 0;
+        this.chromaData[i] = Math.max(0, Math.min(1, c[i]));
       }
-      this.chromaTex.needsUpdate = true;
 
       // Assigned, not interpolated: the tonic is circular, so easing from 11.9
       // to 0.1 would sweep the long way round and visibly spin the arena. It is
@@ -330,9 +345,31 @@ export class WaterArena {
       );
       for (const mat of [this.bodyMat, this.bodyReflMat]) {
         mat.uniforms.uFoamC.value.copy(this._foamC);
-        mat.uniforms.uFoamAmt.value = 0.5 + mm.roughness * 0.75 + perf.intensity * 0.3;
+        // Capped. Above 1 the foam mix saturates and the water stops being a
+        // colour at all, which costs exactly the per-song identity the rest of
+        // this file works to establish.
+        mat.uniforms.uFoamAmt.value = Math.min(1.05, 0.42 + mm.roughness * 0.6 + perf.intensity * 0.28);
         mat.uniforms.uSSS.value = 0.55 + mm.glassiness * 0.7;
       }
+    }
+
+    // ---- voice -------------------------------------------------------------
+    // Without this block the shader's uVoicePresence, uVoicePitch, uEffort,
+    // uVibrato and uGrit all sit at zero forever, and voiceSource() returns on
+    // its first line every time — so the singer never touches the water at all.
+    // That is exactly what had happened here: the wiring was lost when this
+    // build's ancestor was forked, and the whole vocal channel has been dead
+    // ever since while every layer above it went on computing weights for it.
+    const v = music.voice;
+    if (v) {
+      U.uVoicePresence.value += (v.presence - U.uVoicePresence.value) * (1 - Math.exp(-dt * 7));
+      // the melody ridge glides rather than snaps, or every note is a jolt
+      U.uVoicePitch.value += (v.pitch - U.uVoicePitch.value) * (1 - Math.exp(-dt * 9));
+      U.uEffort.value += (v.effort - U.uEffort.value) * (1 - Math.exp(-dt * 5));
+      U.uVibrato.value += (v.vibrato - U.uVibrato.value) * (1 - Math.exp(-dt * 4));
+      U.uVoicePhrase.value += (v.phrase - U.uVoicePhrase.value) * (1 - Math.exp(-dt * 5));
+      U.uVoiceOnset.value = Math.max(U.uVoiceOnset.value * Math.exp(-dt * 3.2), v.onset ? 1 : 0);
+      U.uGrit.value += ((v.grit || 0) - U.uGrit.value) * (1 - Math.exp(-dt * 3));
     }
 
     // spectrum -> texture
@@ -386,7 +423,6 @@ export class WaterArena {
       this.backdropMat, this.causticMat]
       .forEach(m => m.dispose());
     this.spectrumTex.dispose();
-    this.chromaTex.dispose();
   }
 }
 

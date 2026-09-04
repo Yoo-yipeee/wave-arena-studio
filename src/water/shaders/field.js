@@ -38,7 +38,13 @@ uniform float uSpread;  // song identity: how wide the pool sits
 uniform float uRadius;
 uniform float uForm[8];
 uniform sampler2D uSpectrum;
-uniform sampler2D uChroma;
+// Chroma used to be a 12-texel texture. Sampling it cost twelve VERTEX texture
+// fetches inside harmonicSources, and waveDisplace is evaluated three to five
+// times per vertex across a hundred thousand vertices — several million vertex
+// fetches a frame, on hardware where a vertex fetch is one of the slowest
+// things you can ask for. Twelve floats in a uniform array are the same numbers
+// with none of the cost.
+uniform float uChromaV[12];
 uniform float uTonic, uMode, uConsonance, uHarmChange;
 uniform float uVoicePresence, uVoicePitch, uEffort, uVibrato, uVoiceOnset, uVoicePhrase, uGrit;
 uniform vec4 uImpulseA[MAX_IMPULSES];   // xz origin, birth time, strength
@@ -73,7 +79,6 @@ float fbm(vec2 p) {
 
 // --- samplers --------------------------------------------------------------
 float spec(float t) { return texture2D(uSpectrum, vec2(clamp(t, 0.0, 1.0), 0.5)).r; }
-float chromaAt(float t) { return texture2D(uChroma, vec2(t, 0.5)).r; }
 
 // ---------------------------------------------------------------------------
 // A point on the surface disturbed continuously, radiating rings outward.
@@ -129,7 +134,7 @@ float harmonicSources(vec2 p) {
   float h = 0.0;
   for (int i = 0; i < 12; i++) {
     float fi = float(i);
-    float amp = chromaAt((fi + 0.5) / 12.0);
+    float amp = uChromaV[i];
     if (amp < 0.06) continue;
     float a = (fi / 12.0 + uTonic / 12.0) * TAU;
     vec2 c = vec2(cos(a), sin(a)) * uRingRadius;
@@ -145,13 +150,42 @@ float harmonicSources(vec2 p) {
 float voiceSource(vec2 p) {
   float amp = uVoicePresence * (0.25 + uEffort * 1.25);
   if (amp < 0.02) return 0.0;
-  float k = mix(0.55, 1.45, uVoicePitch) * mix(0.6, 1.2, clamp(uPace, 0.3, 1.7) / 1.7);
+  // Longer waves than the original tuning. A tight wavenumber turned the singer
+  // into a spike at the exact centre of the pool — the "too literal ridge" —
+  // whereas a voice carrying a room is felt as the whole body of water moving.
+  float k = mix(0.34, 1.02, uVoicePitch) * mix(0.6, 1.2, clamp(uPace, 0.3, 1.7) / 1.7);
   float wob = uVibrato * 0.3 * sin(uTime * 5.4);
   float h = radiate(p, vec2(0.0), amp, k + wob, 1.85 * uFlow, 0.0);
   // strain roughens the water it disturbs
   float tear = uGrit * 0.3 + uEffort * uVoicePresence * 0.42;
   h *= 1.0 + tear * 0.32 * sin(length(p) * 3.1 - uTime * 4.6);
-  return h * 1.85;
+  // 0.58, not the 1.85 this was written with.
+  //
+  // That gain was set when the voice was the loudest thing in the field. Since
+  // then the forms were normalised to unit amplitude, the Choreographer took
+  // ownership of crest height in world units, and a gamma curve was put on the
+  // height drive — all of it tuned by eye against a build where this function
+  // was returning zero on its first line and nobody could see it. Switched back
+  // on at the old gain the singer alone out-drove the entire ambient swell by
+  // half again, saturated the foam and steepness terms, and blew the frame to
+  // white. The channel was right; only its scale belonged to a different era.
+  return h * 0.58;
+}
+
+// The mix's own spectrum, as fine texture on the water.
+//
+// This is the "radial" form, and until now it was dead: the Choreographer has
+// always computed a weight for it, the section tables have always carried a
+// value, and no shader ever read either — so a bright, busy record and a dark
+// sparse one produced identical surface detail. Angle around the pool maps to
+// frequency, so a wide mix disturbs the whole rim and a narrow one disturbs one
+// arc of it, and the ripple wavelength shortens as the energy climbs the band.
+float spectralSkin(vec2 p) {
+  float r = length(p);
+  float a = atan(p.y, p.x) * INV_TAU + 0.5;        // 0..1 around the pool
+  float band = spec(a);
+  return sin(r * (1.1 + band * 3.2) - uTime * 2.1 * uFlow)
+    * band * band * exp(-r * 0.05);
 }
 
 // A front crossing the pool, the way wind or a passing wake does.
@@ -192,6 +226,7 @@ vec3 waveDisplace(vec2 p) {
 
   h += uForm[0] * voiceSource(p);
   h += uForm[1] * harmonicSources(p);
+  if (uForm[2] > 0.02) h += uForm[2] * spectralSkin(p) * 0.45;
   h += uForm[5] * travellingFront(p) * 0.5;
   h += uForm[3] * sin(r * 0.68 - uTime * 1.9 * uFlow) * exp(-r * 0.03) * 0.5;
 
@@ -206,11 +241,20 @@ vec3 waveDisplace(vec2 p) {
   float cap = fbm(p * mix(1.1, 2.2, clamp(uPace, 0.3, 1.7) / 1.7) + vec2(capT, -capT * 0.72)) - 0.5;
   h += cap * (0.13 + uHighs * 0.28) * (0.4 + uComplexity * 0.7);
 
-  // turbulence when the music turns harsh
-  h += (fbm(p * 0.34 + vec2(uTime * 0.22, uTime * 0.19)) - 0.5) * uChaos * 1.1;
-
-  // arena-wide events
-  h += uEruption * (0.9 + 0.7 * fbm(p * 0.14 - uTime * 0.5)) * exp(-r * 0.035) * 1.0;
+  // Turbulence when the music turns harsh, and the arena-wide events.
+  //
+  // Both are guarded on their own uniform. An fbm is three octaves of value
+  // noise — twelve hashes — and this function runs three to five times per
+  // vertex, so skipping one is worth real time. These branches are on uniforms,
+  // so every invocation in a warp takes the same side and the GPU never has to
+  // execute both: this is the one kind of shader branch that is genuinely free.
+  // uEruption is zero for all but a few seconds of a song.
+  if (uChaos > 0.005) {
+    h += (fbm(p * 0.34 + vec2(uTime * 0.22, uTime * 0.19)) - 0.5) * uChaos * 1.1;
+  }
+  if (uEruption > 0.004) {
+    h += uEruption * (0.9 + 0.7 * fbm(p * 0.14 - uTime * 0.5)) * exp(-r * 0.035) * 1.0;
+  }
   h += uShock * exp(-r * 0.05) * 0.3;
 
   h *= uScale * edge * uAwake;
@@ -234,7 +278,11 @@ float waveHeight(vec2 p) { return waveDisplace(p).y; }
  * ago it passed a point, so the wake behind it can still be foaming.
  */
 float foamAt(vec2 p, float steep) {
-  float f = smoothstep(0.55, 1.5, steep);
+  // Foam starts where water is genuinely about to break, not merely sloping.
+  // The old threshold caught most of the surface once the crests grew, so a
+  // loud passage turned the whole pool white and the colour — the thing that
+  // was supposed to tell one song from another — went with it.
+  float f = smoothstep(0.90, 2.10, steep);
 
   // wake foam: just behind a passing front, fading with the ring's age
   for (int i = 0; i < MAX_IMPULSES; i++) {
@@ -260,7 +308,7 @@ float foamAt(vec2 p, float steep) {
 `;
 
 /** Uniform block shared by every material that samples the field. */
-export function createFieldUniforms(THREE, spectrumTexture, chromaTexture, radius) {
+export function createFieldUniforms(THREE, spectrumTexture, radius) {
   return {
     uTime: { value: 0 },
     uAmp: { value: 0 }, uBass: { value: 0 }, uMids: { value: 0 }, uHighs: { value: 0 }, uAir: { value: 0 },
@@ -275,7 +323,7 @@ export function createFieldUniforms(THREE, spectrumTexture, chromaTexture, radiu
     uRadius: { value: radius },
     uForm: { value: new Float32Array(8) },
     uSpectrum: { value: spectrumTexture },
-    uChroma: { value: chromaTexture },
+    uChromaV: { value: new Float32Array(12) },
     uTonic: { value: 0 }, uMode: { value: 0 },
     uConsonance: { value: 0 }, uHarmChange: { value: 0 },
     uVoicePresence: { value: 0 }, uVoicePitch: { value: 0 }, uEffort: { value: 0 },
