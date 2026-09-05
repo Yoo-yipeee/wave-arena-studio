@@ -326,10 +326,14 @@ export class WaterArena {
       // Foam tinted just off the water's own colour rather than pure white, so
       // it belongs to the song's world instead of sitting on top of it.
       const p3 = this._pal;
+      // Foam keeps more of the song's colour than it used to. Real whitewater
+      // is white, but pushing it 45% of the way to pure white meant the
+      // brightest, most eye-catching part of the frame was identical on every
+      // track, and on a warm palette it dragged the whole surface grey.
       this._foamC.setRGB(
-        Math.min(1, p3.hot.r * 0.55 + 0.45),
-        Math.min(1, p3.hot.g * 0.55 + 0.45),
-        Math.min(1, p3.hot.b * 0.55 + 0.45),
+        Math.min(1, p3.hot.r * 0.74 + 0.26),
+        Math.min(1, p3.hot.g * 0.74 + 0.26),
+        Math.min(1, p3.hot.b * 0.74 + 0.26),
       );
       for (const mat of [this.bodyMat, this.bodyReflMat]) {
         mat.uniforms.uFoamC.value.copy(this._foamC);

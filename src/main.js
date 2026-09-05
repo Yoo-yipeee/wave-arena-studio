@@ -130,6 +130,10 @@ async function beginTrack(loader, label) {
   identity.paletteMode = settings.get('palette');
   identity._recompute();
   arena.setIdentity(identity);
+  // The Choreographer needs it too: how activated the song is decides how big
+  // the arena is ever allowed to get, which level relative to the track's own
+  // plateau can never tell it.
+  choreo.identity = identity;
 
   ui.hideLoading();
   ui.setLive(false);
@@ -186,6 +190,7 @@ ui.on.mic = async () => {
   identity.paletteMode = settings.get('palette');
   identity._recompute();
   arena.setIdentity(identity);
+  choreo.identity = identity;
 
   ui.hideLoading();
   ui.enterPerformance('LIVE INPUT', 0, new Float32Array(0));

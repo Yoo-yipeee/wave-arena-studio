@@ -79,7 +79,14 @@ void main() {
   vec3 col = mix(uDeep, uMid, clamp(hn * 0.70 + 0.16, 0.0, 1.0)) * 0.62;
   col = mix(col, uHot, crest * crest * (0.20 + uHeat * 0.42));
   col += uMid * fres * 0.34;
-  col += vec3(0.80, 0.94, 1.0) * spe * (0.28 + uHeat * 0.55);
+  // The specular used to be a hardcoded cold blue-white. That is defensible
+  // when every song is blue and wrong the moment they are not: on a gold track
+  // the brightest part of every crest was lit in the one colour the palette
+  // does not contain, so the water read as grey while the floor and the
+  // backdrop were visibly warm. Half the song's own highlight colour keeps the
+  // sun-on-water look without arguing with the palette.
+  vec3 specTint = mix(vec3(0.82, 0.90, 1.0), uHot, 0.5);
+  col += specTint * spe * (0.28 + uHeat * 0.55);
   col += uMid * diff * 0.06;
   col *= 1.0 - deepness * 0.62;
 

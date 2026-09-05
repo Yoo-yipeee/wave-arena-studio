@@ -30,34 +30,37 @@
  * actually uses for emotion — Russell's circumplex:
  *
  *   VALENCE   dark and sad  ..  bright and glad     (mode, consonance, timbre)
- *   AROUSAL   still and calm .. driving and intense (onset rate, pulse, attack)
+ *   AROUSAL   still and calm .. driving and intense (tempo, pulse, attack)
  *
- *                        AROUSAL high
- *                             |
- *          crimson-violet 338 | 44 gold-amber
- *          anguish, force     | joy, triumph
- *     VALENCE low ------------+------------ VALENCE high
- *          indigo-blue 232    | 172 aqua-teal
- *          melancholy, still  | serene, tender
- *                             |
- *                        AROUSAL low
+ * Two axes cannot both own one hue dimension without colliding, and two
+ * attempts to make them proved it. Blending four emotional corners as hue
+ * ANGLES swept through red, so every song with an uncertain mode came out
+ * crimson. Blending the same corners in Cartesian a/b landed on orange,
+ * because the two high-arousal anchors pointed the same direction.
  *
- * The four corners are blended bilinearly. Crucially the blend happens in
- * CARTESIAN colour coordinates (lightness, and chroma projected onto a/b axes),
- * never in hue degrees. That is the whole reason the earlier bilinear attempt
- * was abandoned: interpolating from indigo 268 to amber 30 as an angle sweeps
- * through red, so every song with an uncertain mode landed in crimson. In a/b
- * space the midpoint of two opposite hues is neutral — an ambiguous song comes
- * out MUTED rather than confidently wrong, which is the honest answer.
+ * So the axes divide the work instead:
+ *
+ *   VALENCE owns HUE, along a monotonic path that never wraps —
+ *     indigo 258 -> blue -> cyan 182 -> turquoise -> emerald -> gold 38.
+ *     Every point on it is a colour water is allowed to be, so a wrong
+ *     midpoint is impossible by construction rather than by tuning.
+ *
+ *   AROUSAL owns CHROMA and LIGHTNESS, where it cannot collide, plus a tilt
+ *     that takes the sad end toward violet and the glad end toward orange
+ *     while leaving the neutral middle cyan — still the right home for this.
  *
  * ---------------------------------------------------------------------------
  * EVERYTHING THAT MATTERS IS MEASURED OFFLINE
  *
- * Onset rate, pulse strength, chroma, key and mode are all extracted from the
+ * Tempo, pulse strength, chroma, key and mode are all extracted from the
  * decoded buffer before playback starts, so the world is fully formed on the
  * first frame instead of converging during the first verse. The live analysers
  * then refine it, weighted so it settles rather than drifts — colour that keeps
  * moving mid-song reads as a bug, not as identity.
+ *
+ * Measured over four records — a rock single, a Hindi love song, a party rap
+ * track and an acoustic cover — this spans 38 to 229 degrees of hue where the
+ * previous version spanned one.
  */
 
 /** Krumhansl-Kessler key profiles, as used by the live HarmonyAnalyser. */
@@ -139,14 +142,14 @@ export class SongIdentity {
   }
 
   /**
-   * Onset rate and pulse strength, from a short-time energy envelope.
+   * Tempo and pulse strength, from a short-time energy envelope.
    *
    * This is the axis that separates a ballad from a banger, and until now it
    * was only ever measured live — so it could not colour the first frame. An
-   * envelope at 512-sample hops is cheap (one pass, no FFT) and gives both how
-   * MANY events there are and how REGULAR they are, which are different things:
-   * a metronomic house track and a rubato piano piece can share an onset rate
-   * and feel nothing alike.
+   * envelope at 512-sample hops is cheap (one pass, no FFT), and
+   * autocorrelating its flux gives the tempo and how REGULAR the pulse is,
+   * which are different things: a metronomic house track and a rubato piano
+   * piece can share a tempo and feel nothing alike.
    */
   _measureRhythm(L, R, n, sr) {
     const HOP = 512;
@@ -178,29 +181,6 @@ export class SongIdentity {
     // all, and it saturated the arousal axis so a ballad and a rock single came
     // out identically frantic. No player articulates thirteen times a second;
     // 70ms between events is already fast for a human.
-    const HALF = 12;
-    const REFRACTORY = Math.max(2, Math.round(fps * 0.07));
-    let onsets = 0, lastOnset = -999;
-    for (let f = HALF; f < frames - HALF; f++) {
-      if (f - lastOnset < REFRACTORY) continue;
-      let mean = 0;
-      for (let k = f - HALF; k <= f + HALF; k++) mean += flux[k];
-      mean /= (HALF * 2 + 1);
-      let varsum = 0;
-      for (let k = f - HALF; k <= f + HALF; k++) { const d = flux[k] - mean; varsum += d * d; }
-      const sd = Math.sqrt(varsum / (HALF * 2 + 1));
-      const thr = mean + sd * 1.7 + 0.02;
-      // a true local maximum over the refractory span, not merely over one frame
-      if (flux[f] <= thr) continue;
-      let peak = true;
-      for (let k = Math.max(0, f - REFRACTORY); k <= Math.min(frames - 1, f + REFRACTORY); k++) {
-        if (flux[k] > flux[f]) { peak = false; break; }
-      }
-      if (!peak) continue;
-      onsets++;
-      lastOnset = f;
-    }
-    this.onsetRate = onsets / Math.max(1, frames / fps);   // events per second
 
     // Pulse: how strongly periodic the flux is over plausible beat periods.
     // A peak that stands well clear of the mean means a steady grid underneath.
@@ -226,10 +206,17 @@ export class SongIdentity {
     // produces. Everything else refines that.
     const bpm = this.bpmOffline || 110;
     const tempoA = clamp01((bpm - 62) / 78);        // 62 BPM -> 0, 140 -> 1
-    const rateA = clamp01((this.onsetRate - 0.9) / 3.6);
+    //
+    // There is no event-density term here, and that is a deliberate negative
+    // result rather than an oversight. Counting note attacks needs a threshold;
+    // a per-track threshold is self-normalising, so a dense party track and a
+    // sparse acoustic cover both returned about five a second, and an absolute
+    // threshold is meaningless across masters that differ by 15dB. Measured
+    // across four records that axis spanned 1.05x and carried no information,
+    // so it is gone. Tempo, pulse and attack all discriminate properly and have
+    // taken its weight.
     this.arousalOffline = clamp01(
-      tempoA * 0.36 + rateA * 0.22 + this.pulse * 0.16
-      + this.attack * 0.16 + this.brightness * 0.10);
+      tempoA * 0.44 + this.pulse * 0.24 + this.attack * 0.22 + this.brightness * 0.10);
   }
 
   /**
@@ -350,9 +337,19 @@ export class SongIdentity {
     const conf = harmony.confidence * (0.35 + harmony.tonalness * 0.65);
     if (conf < 0.05) return;
     const target = harmony.mode * 0.5 + 0.5;
-    const k = (1 - Math.exp(-dt * 0.35)) * (1 - this.settled * 0.92) * conf;
+    // The live reading only gets to move what the offline one was unsure of.
+    //
+    // Without this the two fight, and the noisier one wins by persistence: a
+    // C-major acoustic cover read offline at 0.85 confidence was walked down
+    // over the first minute of playback, taking its hue from gold at 46 through
+    // 67 to 88 — into the one narrow band of the wheel the ramp is built to get
+    // past quickly. A colour that keeps moving mid-song reads as a bug, and a
+    // whole-track analysis is better evidence than a two-second window.
+    const trust = 1 - this.keyConfidence * 0.75;
+    const k = (1 - Math.exp(-dt * 0.35)) * (1 - this.settled * 0.92) * conf * trust;
     this.warmth += (target - this.warmth) * k;
-    this.settled = Math.min(1, this.settled + dt * 0.035);
+    // A confident offline read also locks sooner.
+    this.settled = Math.min(1, this.settled + dt * (0.035 + this.keyConfidence * 0.05));
     this._recompute();
   }
 
@@ -376,7 +373,7 @@ export class SongIdentity {
       duration: 0,
       zcr: 0.09, grain: 0.28, hiRatio: 0.32, brightness: 0.5,
       attack: 0.4, width: 0.5, range: 0.6,
-      onsetRate: 2.0, pulse: 0.4, beatPeriod: 0.5, bpmOffline: 120,
+      pulse: 0.4, beatPeriod: 0.5, bpmOffline: 120,
       arousalOffline: 0.45,
       chroma: new Float32Array(12), chromaWindows: 0,
       keyRoot: 0, keyMode: 0, keyConfidence: 0, consonance: 0,
@@ -404,10 +401,15 @@ export class SongIdentity {
     // is how every song ended up the same colour before.
     const modeV = this.warmth - 0.5;
     const conf = Math.max(this.keyConfidence, 0.30);
-    return clamp01(0.5
-      + modeV * 1.45 * conf
-      + this.consonance * 0.30
-      + (this.brightness - 0.5) * 0.32);
+    const drive = modeV * 1.55 * conf
+      + this.consonance * 0.32
+      + (this.brightness - 0.5) * 0.34;
+    // A soft knee rather than a hard clamp. A confidently major acoustic cover
+    // drove this to 1.175 and was cut to 1.0, which means every song from there
+    // upward collapsed onto the same gold with no headroom left for anything
+    // happier. tanh keeps the spread where most music actually sits and
+    // approaches the ends without ever reaching them.
+    return 0.5 + 0.5 * Math.tanh(drive * 1.5);
   }
 
   /** 0 sweet and settled .. 1 harsh and strained. Drives texture, not hue. */
@@ -490,8 +492,10 @@ export class SongIdentity {
       // Crests keep the song's colour instead of bleaching out of it. At 0.42
       // saturation and 0.96 lightness the brightest water was very nearly
       // achromatic, so every track converged on the same white at exactly the
-      // loudest moment — the one everybody screenshots.
-      hot:  hsl(h + 14, s * 0.58, Math.min(0.90, l + 0.34)),
+      // loudest moment — the one everybody screenshots. Warm palettes suffer
+      // this worst: a pale yellow is indistinguishable from cream, so a gold
+      // song blew the whole frame out while a blue one still read as water.
+      hot:  hsl(h + 14, s * 0.70, Math.min(0.82, l + 0.26)),
       glow: hsl(h - 10, s * 0.7, l * 0.30),
     };
   }
@@ -541,7 +545,7 @@ export class SongIdentity {
       warmth: +this.warmth.toFixed(2), drive: +this.drive.toFixed(2),
       keyMode: +this.keyMode.toFixed(2), keyConf: +this.keyConfidence.toFixed(2),
       consonance: +this.consonance.toFixed(2),
-      onsetRate: +this.onsetRate.toFixed(2), pulse: +this.pulse.toFixed(2),
+      pulse: +this.pulse.toFixed(2),
       bpmOffline: this.bpmOffline,
       grain: +this.grain.toFixed(2),
       brightness: +this.brightness.toFixed(2),
@@ -577,18 +581,24 @@ function pearson(a, b) {
  * Every stop is a colour water can plausibly be, and because the path only ever
  * decreases, the interpolation between any two points is also on the path. That
  * property is the whole point: it makes a wrong midpoint impossible by
- * construction rather than by tuning. The green stretch is passed through
- * quickly — tropical water is lovely, pure green water is not.
+ * construction rather than by tuning.
+ *
+ * The lime crossing sits between 0.74 and 0.88 and is deliberately narrow.
+ * An earlier layout put it at 0.84-0.90, which turned out to be exactly where a
+ * confidently major song lands: a C-major acoustic cover came out at valence
+ * 0.90 and rendered as muddy olive. That band is not a rare edge case, it is
+ * where happy music lives, so the ramp now reaches amber well before it.
  */
 const HUE_RAMP = [
   [0.00, 258],   // deep indigo-blue — desolate
   [0.18, 236],   // blue — melancholy
   [0.36, 208],   // blue-cyan — pensive
   [0.52, 182],   // cyan-teal — the signature, and where the neutral song sits
-  [0.66, 164],   // turquoise — hopeful
-  [0.80, 148],   // emerald — a real lagoon colour, and the last one that is
-  [0.90, 104],   // the lime crossing: passed through fast and desaturated below
-  [1.00, 46],    // gold — joy
+  [0.64, 168],   // turquoise — hopeful
+  [0.76, 150],   // emerald — a real lagoon colour, and the last green that is
+  [0.80, 104],   // the lime crossing, four points wide and desaturated below
+  [0.84, 54],    // amber
+  [1.00, 38],    // gold — joy
 ];
 function rampHue(v) {
   const t = clamp01(v);

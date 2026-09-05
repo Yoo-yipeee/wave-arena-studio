@@ -123,6 +123,7 @@ export class Choreographer {
     this._imp = 0;
 
     this.plan = null;
+    this.identity = null;
     this.events = [];   // consumed each frame by camera / spray
     this.resetTrack();
   }
@@ -134,8 +135,9 @@ export class Choreographer {
    * section state, phrase clock and rolling histories — so it opens mid-chorus
    * with the wrong dynamics for its first half-minute.
    */
-  resetTrack(plan = null) {
+  resetTrack(plan = null, identity = null) {
     this.plan = plan;
+    this.identity = identity;
     this.section = 'silence';
     this.prevSection = 'silence';
     this.sectionTime = 0;
@@ -490,7 +492,17 @@ export class Choreographer {
     const breath = vx ? 1 - vx.gap * 0.22 * this._voiceSeen : 1;
     const heightDrive = (look.height * (0.6 + Math.max(m.amplitude * 0.62, vocalDrive * 0.78))
       * (1 + buildRamp * 0.32) + m.bass * 0.85 + this.p.eruption * 1.5) * breath;
-    const wantHeight = MAX_HEIGHT * Math.pow(clamp01(heightDrive / MAX_HEIGHT), HEIGHT_GAMMA);
+    // How activated the SONG is, not just this moment in it.
+    //
+    // Section and height came only from level relative to the track's own
+    // plateau, which is self-normalising: a hushed acoustic cover holds its
+    // level as steadily as a rock chorus does, so it was handed the same crest
+    // heights and the same heat, towered to two thirds of the ceiling and blew
+    // the frame out. Loudness relative to itself cannot tell a calm record from
+    // a driving one. Arousal can, and it is known before the first frame.
+    const calm = this.identity ? (0.54 + this.identity.arousal * 0.62) : 1;
+
+    const wantHeight = MAX_HEIGHT * Math.pow(clamp01(heightDrive / MAX_HEIGHT), HEIGHT_GAMMA) * calm;
     p.height += (wantHeight - p.height) * k;
     p.spectrumGain += (look.spectrumGain * (0.65 + m.amplitude * 0.7) - p.spectrumGain) * k;
     p.complexity += (look.complexity * (1 + buildRamp * 0.5) + m.highs * 0.25 - p.complexity) * k;
@@ -510,8 +522,9 @@ export class Choreographer {
     p.spray += (look.spray * (0.4 + m.beatPulse * 1.2) - p.spray) * (1 - Math.exp(-sdt * 3.5));
     p.bloom += (look.bloom * (0.85 + m.amplitude * 0.35) - p.bloom) * (1 - Math.exp(-sdt * 1.6));
     // a belt brightens the water the way it brightens the mix
-    const wantHeat = Math.min(1.02, look.heat * (0.6 + m.energyShort * 0.8)
-      + this.p.eruption * 0.5 + (vx ? vx.presence * vx.effort * 0.28 : 0));
+    const wantHeat = Math.min(1.02, (look.heat * (0.6 + m.energyShort * 0.8)
+      + this.p.eruption * 0.5 + (vx ? vx.presence * vx.effort * 0.28 : 0))
+      * (this.identity ? 0.58 + this.identity.arousal * 0.52 : 1));
     p.heat += (wantHeat - p.heat) * (1 - Math.exp(-sdt * 2.0));
     // Frame the water we actually have, not the water the section nominally wants.
     // Headroom: the frame should always have room above the water, so the one
