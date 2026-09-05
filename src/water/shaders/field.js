@@ -28,10 +28,17 @@ export const FIELD_GLSL = /* glsl */`
 
 uniform float uTime;
 uniform float uAmp, uMids, uHighs;
-uniform float uScale, uComplexity, uChaos, uFlow;
+uniform float uScale, uComplexity, uChaos;
 uniform float uRingRadius;
 uniform float uEruption, uShock, uAwake;
-uniform float uPace;    // 1.0 = 120 BPM; scales wavelength as well as speed
+// Wave motion is no longer a free parameter.
+//
+// uLambda scales every wavelength: a slow song makes LONG waves, a fast one
+// short ones. uGravity then sets how quickly water of that wavelength moves,
+// and it is chosen in JS so the dominant swell takes exactly two beats to pass.
+// Speed itself is never set directly anywhere — see omega() below.
+uniform float uLambda;    // 1 = neutral, >1 longer waves, <1 shorter
+uniform float uGravity;   // strength of the restoring force, from the tempo
 uniform float uGrain;   // song identity: 0 glassy .. 1 broken and foaming
 uniform float uSpread;  // song identity: how wide the pool sits
 // How far a wave carries before it is gone. These were fixed constants, which
@@ -86,15 +93,33 @@ float fbm(vec2 p) {
 float spec(float t) { return texture2D(uSpectrum, vec2(clamp(t, 0.0, 1.0), 0.5)).r; }
 
 // ---------------------------------------------------------------------------
+// Deep-water dispersion: omega = sqrt(g*k).
+//
+// This is the single most important line in the file. Wavelength and speed are
+// NOT independent in water — long swells roll slowly, short chop moves quickly,
+// and the relationship is fixed by physics. Treating them as two separate knobs
+// let the arena produce combinations that do not exist in nature, which is most
+// of why the motion read as arbitrary however carefully it was tuned. It also
+// let a 63 BPM love song move its water faster than a 125 BPM rock track,
+// because the two knobs were fed by an event-rate proxy that could not tell
+// those songs apart. Now speed is a CONSEQUENCE of wavelength, so it cannot
+// disagree with it, and the only thing the music chooses is how long the waves
+// are and how hard the water is pulled back.
+// ---------------------------------------------------------------------------
+float omega(float k) { return sqrt(uGravity * k); }
+
+// ---------------------------------------------------------------------------
 // A point on the surface disturbed continuously, radiating rings outward.
 // Amplitude falls as 1/sqrt(d) because a circular front spreads its energy
 // around a growing circumference — this is why real ripples fade the way they
 // do, and getting it wrong is most of why fake water looks fake.
 // ---------------------------------------------------------------------------
-float radiate(vec2 p, vec2 c, float amp, float k, float speed, float ph) {
+float radiate(vec2 p, vec2 c, float amp, float k, float ph) {
   float d = distance(p, c);
   float spread = inversesqrt(1.0 + d * 0.55);
-  return sin(d * k - uTime * speed + ph) * amp * spread * exp(-d * uDamp);
+  // Same dispersion as the swell: a source that throws tight ripples throws
+  // them fast, a source that heaves the whole pool heaves it slowly.
+  return sin(d * k - uTime * omega(k) + ph) * amp * spread * exp(-d * uDamp);
 }
 
 // ---------------------------------------------------------------------------
@@ -102,9 +127,9 @@ float radiate(vec2 p, vec2 c, float amp, float k, float speed, float ph) {
 // in circles, not up and down, which pinches the crests and flattens the
 // troughs. Without it a surface reads as rubber sheeting however it is lit.
 // ---------------------------------------------------------------------------
-vec3 gerstner(vec2 p, vec2 dir, float lambda, float steep, float amp, float speed) {
+vec3 gerstner(vec2 p, vec2 dir, float lambda, float steep, float amp) {
   float k = TAU / lambda;
-  float f = k * dot(dir, p) - uTime * speed;
+  float f = k * dot(dir, p) - uTime * omega(k);
   float c = cos(f);
   return vec3(dir.x * steep * amp * c, amp * sin(f), dir.y * steep * amp * c);
 }
@@ -114,7 +139,7 @@ vec3 swell(vec2 p) {
   // A slow song does not just move slower — it moves in LONGER waves. Scaling
   // speed alone left a ballad looking like a fast song in slow motion, all the
   // same choppy detail simply dragging.
-  float lam = mix(1.75, 0.78, clamp(uPace, 0.3, 1.7) / 1.7);
+  float lam = uLambda;
   vec3 s = vec3(0.0);
   // Wavelengths sized to the pool, not to an ocean. At 34 units across a
   // 26-unit arena there was barely one cycle of the largest wave in frame, so
@@ -122,11 +147,11 @@ vec3 swell(vec2 p) {
   // A spectrum, not a single scale: a few long swells carry the shape and the
   // short ones ride on top of them. Only the short ones and the surface looks
   // like sand; only the long ones and it looks like a mound.
-  s += gerstner(p, normalize(vec2( 0.86,  0.51)), 24.0 * lam, 0.66, 0.72 * e, 0.52 * uFlow);
-  s += gerstner(p, normalize(vec2(-0.44,  0.90)), 15.0 * lam, 0.60, 0.48 * e, 0.74 * uFlow);
-  s += gerstner(p, normalize(vec2( 0.31, -0.95)),  9.0 * lam, 0.50, 0.30 * e, 1.02 * uFlow);
-  s += gerstner(p, normalize(vec2(-0.92, -0.39)),  5.5 * lam, 0.40, 0.18 * e, 1.38 * uFlow);
-  s += gerstner(p, normalize(vec2( 0.62, -0.78)),  3.2 * lam, 0.32, 0.10 * e, 1.80 * uFlow);
+  s += gerstner(p, normalize(vec2( 0.86,  0.51)), 24.0 * lam, 0.66, 0.72 * e);
+  s += gerstner(p, normalize(vec2(-0.44,  0.90)), 15.0 * lam, 0.60, 0.48 * e);
+  s += gerstner(p, normalize(vec2( 0.31, -0.95)),  9.0 * lam, 0.50, 0.30 * e);
+  s += gerstner(p, normalize(vec2(-0.92, -0.39)),  5.5 * lam, 0.40, 0.18 * e);
+  s += gerstner(p, normalize(vec2( 0.62, -0.78)),  3.2 * lam, 0.32, 0.10 * e);
   return s;
 }
 
@@ -144,8 +169,8 @@ float harmonicSources(vec2 p) {
     float a = (fi / 12.0 + uTonic / 12.0) * TAU;
     vec2 c = vec2(cos(a), sin(a)) * uRingRadius;
     // minor ripples tighter and colder, major broader and calmer
-    float k = mix(1.55, 1.05, uMode * 0.5 + 0.5) * mix(0.55, 1.25, clamp(uPace, 0.3, 1.7) / 1.7);
-    h += radiate(p, c, amp * amp, k, 2.3 * uFlow, fi * 1.7);
+    float k = mix(1.55, 1.05, uMode * 0.5 + 0.5) / uLambda;
+    h += radiate(p, c, amp * amp, k, fi * 1.7);
   }
   return h * 0.78;
 }
@@ -158,9 +183,9 @@ float voiceSource(vec2 p) {
   // Longer waves than the original tuning. A tight wavenumber turned the singer
   // into a spike at the exact centre of the pool — the "too literal ridge" —
   // whereas a voice carrying a room is felt as the whole body of water moving.
-  float k = mix(0.34, 1.02, uVoicePitch) * mix(0.6, 1.2, clamp(uPace, 0.3, 1.7) / 1.7);
+  float k = mix(0.34, 1.02, uVoicePitch) / uLambda;
   float wob = uVibrato * 0.3 * sin(uTime * 5.4);
-  float h = radiate(p, vec2(0.0), amp, k + wob, 1.85 * uFlow, 0.0);
+  float h = radiate(p, vec2(0.0), amp, k + wob, 0.0);
   // strain roughens the water it disturbs
   float tear = uGrit * 0.3 + uEffort * uVoicePresence * 0.42;
   h *= 1.0 + tear * 0.32 * sin(length(p) * 3.1 - uTime * 4.6);
@@ -189,8 +214,8 @@ float spectralSkin(vec2 p) {
   float r = length(p);
   float a = atan(p.y, p.x) * INV_TAU + 0.5;        // 0..1 around the pool
   float band = spec(a);
-  return sin(r * (1.1 + band * 3.2) - uTime * 2.1 * uFlow)
-    * band * band * exp(-r * 0.05);
+  float k = (1.1 + band * 3.2) / uLambda;
+  return sin(r * k - uTime * omega(k)) * band * band * exp(-r * 0.05);
 }
 
 // A front crossing the pool, the way wind or a passing wake does.
@@ -198,7 +223,8 @@ float travellingFront(vec2 p) {
   float head = uTime * 0.09;
   vec2 d = vec2(cos(head), sin(head));
   float x = dot(p, d);
-  return sin(x * 0.62 - uTime * 2.4 * uFlow) * exp(-abs(x) * 0.012) * (0.4 + uMids * 0.7);
+  float k = 0.62 / uLambda;
+  return sin(x * k - uTime * omega(k)) * exp(-abs(x) * 0.012) * (0.4 + uMids * 0.7);
 }
 
 // --- transient strikes ------------------------------------------------------
@@ -233,7 +259,8 @@ vec3 waveDisplace(vec2 p) {
   h += uForm[1] * harmonicSources(p);
   if (uForm[2] > 0.02) h += uForm[2] * spectralSkin(p) * 0.45;
   h += uForm[5] * travellingFront(p) * 0.5;
-  h += uForm[3] * sin(r * 0.68 - uTime * 1.9 * uFlow) * exp(-r * 0.03) * 0.5;
+  float kRing = 0.68 / uLambda;
+  h += uForm[3] * sin(r * kRing - uTime * omega(kRing)) * exp(-r * 0.03) * 0.5;
 
   h += impulses(p) * 0.85;
 
@@ -242,8 +269,9 @@ vec3 waveDisplace(vec2 p) {
   h += (fbm(p * 3.4 + vec2(uTime * 0.9, uTime * 0.7)) - 0.5) * uGrain * 0.34;
 
   // capillary detail — the fine ripples that ride the big ones and catch light
-  float capT = uTime * mix(0.45, 1.15, clamp(uPace, 0.3, 1.7) / 1.7);
-  float cap = fbm(p * mix(1.1, 2.2, clamp(uPace, 0.3, 1.7) / 1.7) + vec2(capT, -capT * 0.72)) - 0.5;
+  float capK = 1.55 / uLambda;
+  float capT = uTime * omega(capK) * 0.30;
+  float cap = fbm(p * capK + vec2(capT, -capT * 0.72)) - 0.5;
   h += cap * (0.13 + uHighs * 0.28) * (0.4 + uComplexity * 0.7);
 
   // Turbulence when the music turns harsh, and the arena-wide events.
@@ -318,10 +346,10 @@ export function createFieldUniforms(THREE, spectrumTexture, radius) {
     uTime: { value: 0 },
     uAmp: { value: 0 }, uMids: { value: 0 }, uHighs: { value: 0 },
     uScale: { value: 0.16 }, uComplexity: { value: 0.1 },
-    uChaos: { value: 0.02 }, uFlow: { value: 0.3 },
+    uChaos: { value: 0.02 },
     uRingRadius: { value: 9 },
     uEruption: { value: 0 }, uShock: { value: 0 }, uAwake: { value: 0.25 },
-    uPace: { value: 0.75 },
+    uLambda: { value: 1.0 }, uGravity: { value: 40.0 },
     uGrain: { value: 0.3 }, uSpread: { value: 1.0 },
     uDamp: { value: 0.042 }, uRingDecay: { value: 1.25 },
     uHeightRef: { value: 1.0 },

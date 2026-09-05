@@ -78,16 +78,19 @@ const PHRASE_VARIANTS = [
 const MAX_HEIGHT = 6.2;
 
 /**
- * Shaping exponent on height.
+ * Shaping exponent on the height driver.
  *
- * Without it the arena spent most of a song pressed against the top of the
- * frame, so the biggest moment had nowhere left to go and every loud passage
- * looked identical. Raising the drive to a power pushes ordinary loudness well
- * down the range and reserves the top for the one moment that earns it: at 1.85
- * a passage driving 60% of maximum renders at 40%, while the true peak still
- * reaches full height.
+ * It reserves the top of the frame for the moment that earns it: a passage at
+ * 60% of full energy renders at about half height, so a drop still has
+ * somewhere to go.
+ *
+ * It used to be 1.85, applied to an eight-term product divided by the ceiling.
+ * That made it an EXPANDER at the bottom of its range, which is exactly where
+ * quiet music lives: a 50% change in a small input became a 2.1x change in
+ * rendered height, so a hushed passage flickered between low and flat. It now
+ * applies to a single normalised 0..1 driver and is much gentler.
  */
-const HEIGHT_GAMMA = 1.85;
+const HEIGHT_GAMMA = 1.35;
 
 /** How long before a planned drop the arena starts building. */
 const BUILD_LEAD = 8.0;
@@ -108,7 +111,7 @@ export class Choreographer {
     this.phrase = 0;
 
     this.p = {
-      height: 0.7, spectrumGain: 0.1, complexity: 0.1, chaos: 0.02, flow: 0.3, symmetry: 2,
+      height: 0.7, spectrumGain: 0.1, complexity: 0.1, chaos: 0.02, symmetry: 2,
       mist: 0.2, spray: 0, bloom: 0.55, heat: 0, camDist: 40, camHeight: 13.0, fov: 34,
       forms: new Float32Array(FORM_COUNT),
       eruption: 0, shock: 0, intensity: 0, shake: 0, ringRadius: 9, ringWidth: 7,
@@ -164,6 +167,7 @@ export class Choreographer {
     this._voiceSeen = 0;
     this._firedDrop = -1;
     this._quietFor = 0;
+    this._energy = 0;
     this.events.length = 0;
 
     const p = this.p;
@@ -487,11 +491,24 @@ export class Choreographer {
     // land at the same RMS as the verse that preceded it — modern masters are
     // compressed flat. Vocal effort therefore drives height alongside level,
     // and the arena eases back in the breath between phrases.
+    // ---- ONE driver ------------------------------------------------------
+    //
+    // Height used to be the product of eight terms — section, loudness, voice,
+    // build, bass, eruption, breath and arousal — then raised to a power. Every
+    // one was individually defensible and the result was unpredictable, because
+    // multiplication compounds: when three drifted down together the water went
+    // flat, and no single term looked wrong when you inspected it. Nothing was
+    // in charge, so nothing could be reasoned about.
+    //
+    // Now one number decides how big the water is. Loudness and vocal effort
+    // are combined into it BEFORE anything else sees them — a sung line and a
+    // loud band are two ways of saying the same thing, so whichever is carrying
+    // the music wins — and it is smoothed on its own clock so it cannot
+    // flicker. Everything else either sets its range or adds to it.
     const vx = m.voice;
-    const vocalDrive = vx ? vx.presence * (0.3 + vx.effort * 1.0) : 0;
-    const breath = vx ? 1 - vx.gap * 0.22 * this._voiceSeen : 1;
-    const heightDrive = (look.height * (0.6 + Math.max(m.amplitude * 0.62, vocalDrive * 0.78))
-      * (1 + buildRamp * 0.32) + m.bass * 0.85 + this.p.eruption * 1.5) * breath;
+    const vocal = vx ? vx.presence * (0.35 + vx.effort * 0.85) : 0;
+    const rawEnergy = clamp01(Math.max(m.amplitude, vocal * 0.92));
+    this._energy += (rawEnergy - this._energy) * (1 - Math.exp(-sdt * 2.4));
     // How activated the SONG is, not just this moment in it.
     //
     // Section and height came only from level relative to the track's own
@@ -500,9 +517,25 @@ export class Choreographer {
     // heights and the same heat, towered to two thirds of the ceiling and blew
     // the frame out. Loudness relative to itself cannot tell a calm record from
     // a driving one. Arousal can, and it is known before the first frame.
-    const calm = this.identity ? (0.54 + this.identity.arousal * 0.62) : 1;
+    // The section sets a FLOOR and a CEILING rather than a multiplier, so the
+    // water has a size it can never fall below while that section lasts. A
+    // multiplier can always be driven to zero by whatever is multiplying it;
+    // a floor cannot, which is what stops quiet passages going completely flat.
+    const lo = look.height * 0.46;
+    const hi = look.height * 1.62;
+    let hWant = lo + (hi - lo) * Math.pow(this._energy, HEIGHT_GAMMA);
 
-    const wantHeight = MAX_HEIGHT * Math.pow(clamp01(heightDrive / MAX_HEIGHT), HEIGHT_GAMMA) * calm;
+    // Accents ADD. A kick or a drop should lift the water by a knowable amount
+    // regardless of how loud the passage already is — as a multiplier the same
+    // kick did nothing in a quiet verse and threw the surface through the roof
+    // in a chorus.
+    hWant += this.p.eruption * 1.25 + m.bass * 0.22 + buildRamp * 0.30;
+
+    // One song-level scale, known before the first frame: a calm record is
+    // physically smaller water than a driving one.
+    hWant *= this.identity ? (0.62 + this.identity.arousal * 0.52) : 1;
+
+    const wantHeight = Math.min(MAX_HEIGHT, hWant);
     p.height += (wantHeight - p.height) * k;
     p.spectrumGain += (look.spectrumGain * (0.65 + m.amplitude * 0.7) - p.spectrumGain) * k;
     p.complexity += (look.complexity * (1 + buildRamp * 0.5) + m.highs * 0.25 - p.complexity) * k;
@@ -510,13 +543,11 @@ export class Choreographer {
     // even at the same loudness as a sweet one.
     const harshness = m.harmony ? Math.max(0, -m.harmony.consonance) * m.harmony.tonalness : 0;
     p.chaos += (look.chaos * (1 + buildRamp) + m.highs * 0.12 + harshness * 0.16 - p.chaos) * k;
-    // Flow follows the music's PACE, not its volume. Keying it to energy meant
-    // a slow song swept along the moment it grew — the waves outrunning the
-    // music is the fastest way to break the feeling that they belong to it.
-    // Smooth, sustained material is damped further still.
-    const paceFlow = 0.25 + (m.pace || 0.75) * 0.85;
-    const legato = 1 - (m.smoothness || 0.5) * 0.40;
-    p.flow += (look.flow * paceFlow * legato - p.flow) * k;
+    // There is no `flow` any more. How fast the water moves is now a
+    // consequence of how long its waves are, decided from the song's tempo in
+    // WaterArena and resolved by omega = sqrt(g*k) in the shader. A section
+    // cannot make water travel faster, because loudness does not do that to
+    // water. It only makes the waves bigger.
     p.symmetry += (look.symmetry - p.symmetry) * (1 - Math.exp(-sdt * 0.8));
     p.mist += (look.mist * (0.7 + m.amplitude * 0.6) - p.mist) * (1 - Math.exp(-sdt * 1.1));
     p.spray += (look.spray * (0.4 + m.beatPulse * 1.2) - p.spray) * (1 - Math.exp(-sdt * 3.5));

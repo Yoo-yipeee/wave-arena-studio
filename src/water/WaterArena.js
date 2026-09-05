@@ -250,8 +250,33 @@ export class WaterArena {
     U.uScale.value = perf.height;
     U.uComplexity.value = perf.complexity;
     U.uChaos.value = perf.chaos;
-    U.uFlow.value = perf.flow;
-    U.uPace.value += ((perf.pace || 0.75) - U.uPace.value) * (1 - Math.exp(-dt * 0.6));
+    // ---- how the water moves, from the tempo alone -------------------------
+    //
+    // Wave motion is a property of the SONG, not of the moment. Energy changes
+    // how BIG the waves are; it does not change how fast water travels, any
+    // more than shouting makes the sea quicker. Driving speed from a live
+    // per-frame reading is what let a chorus outrun its own verse and what let
+    // a 63 BPM ballad move faster than a 125 BPM rock track.
+    //
+    // Two numbers, both from tempo, both held steady for the whole song:
+    //
+    //   uLambda   how long the waves are. Slow song, long waves.
+    //   uGravity  chosen so the dominant swell takes exactly TWO BEATS to pass.
+    //
+    // Everything else follows from omega = sqrt(g*k) in the shader, so the
+    // whole surface is automatically coherent: the long swells roll at the
+    // song's pulse and the small chop rides on top at its own correct rate.
+    const bpm = Math.min(170, Math.max(50,
+      (this.identity && this.identity.bpmOffline > 40) ? this.identity.bpmOffline
+        : (music.bpm > 40 ? music.bpm : 110)));
+    const lam = Math.min(1.55, Math.max(0.72, 1.55 - bpm / 150));
+    const beatsPerSwell = 2.0;
+    const w0 = (2 * Math.PI) / ((60 / bpm) * beatsPerSwell);
+    const lam0 = 15.0 * lam;                       // the dominant swell
+    const grav = w0 * w0 * lam0 / (2 * Math.PI);   // invert omega = sqrt(g*k)
+
+    U.uLambda.value += (lam - U.uLambda.value) * (1 - Math.exp(-dt * 0.5));
+    U.uGravity.value += (grav - U.uGravity.value) * (1 - Math.exp(-dt * 0.5));
     U.uRingRadius.value = perf.ringRadius;
     U.uEruption.value = perf.eruption;
     U.uShock.value = perf.shock;
