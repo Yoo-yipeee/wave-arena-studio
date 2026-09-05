@@ -17,20 +17,6 @@ const PALETTE = {
   glow: new THREE.Color(0x06243f),
 };
 
-/**
- * The song's water colour, as a blue-family bilinear blend over
- * (mode: minor..major) x (brightness: dark..bright).
- *
- * Deliberately one hue family: every track should still read as WAVE ARENA.
- * Songs separate themselves through shape, motion and material — harmony only
- * shifts the tone within the family.
- */
-const TONE = {
-  minorDark:   new THREE.Color(0x0a3a68),   // deep indigo
-  minorBright: new THREE.Color(0x1273c4),   // steel blue
-  majorDark:   new THREE.Color(0x1a86c8),   // muted aqua
-  majorBright: new THREE.Color(0x37c8e8),   // aqua
-};
 
 /**
  * WaterArena — every renderable in the performance.
@@ -60,7 +46,6 @@ export class WaterArena {
     this.chromaData = this.U.uChromaV.value;
     this._tone = PALETTE.mid.clone();
     this._toneTarget = PALETTE.mid.clone();
-    this._toneScratch = PALETTE.mid.clone();
     this._foamC = new THREE.Color(0xdff2ff);
     this.identity = null;
     this._pal = null;
@@ -257,25 +242,17 @@ export class WaterArena {
     U.uTime.value += dt;
 
     U.uAmp.value = music.amplitude;
-    U.uBass.value = music.bass;
     U.uMids.value = music.mids;
     U.uHighs.value = music.highs;
-    U.uAir.value = music.air;
-    U.uBeat.value = music.beat;
-    U.uBeatPulse.value = music.beatPulse;
-    U.uBeatPhase.value = music.beatPhase;
 
     // perf.height is already in world units — the field is normalised so this
     // is simply "how tall are the crests right now".
     U.uScale.value = perf.height;
-    U.uSpectrumGain.value = perf.spectrumGain;
     U.uComplexity.value = perf.complexity;
     U.uChaos.value = perf.chaos;
     U.uFlow.value = perf.flow;
     U.uPace.value += ((perf.pace || 0.75) - U.uPace.value) * (1 - Math.exp(-dt * 0.6));
-    U.uSymmetry.value = perf.symmetry;
     U.uRingRadius.value = perf.ringRadius;
-    U.uRingWidth.value = perf.ringWidth;
     U.uEruption.value = perf.eruption;
     U.uShock.value = perf.shock;
     U.uAwake.value = awake;
@@ -301,8 +278,6 @@ export class WaterArena {
       // already smoothed around the circle inside HarmonyAnalyser.
       U.uTonic.value = h.tonic;
       U.uMode.value += (h.mode - U.uMode.value) * (1 - Math.exp(-dt * 0.8));
-      U.uConsonance.value += (h.consonance - U.uConsonance.value) * (1 - Math.exp(-dt * 1.5));
-      U.uHarmChange.value = h.change;
 
       // Colour comes from the song's identity, not from the moment. The live
       // reading only nudges lightness, so the world stays recognisably itself
@@ -332,6 +307,19 @@ export class WaterArena {
       const mm = this.identity.material();
       U.uGrain.value = mm.roughness;
       U.uSpread.value = mm.spread;
+
+      // How far this song's waves carry. A sustained, legato record sends a
+      // swell clear across the pool; a dry percussive one has its energy die
+      // close to where it landed.
+      const ph = this.identity.physics();
+      U.uDamp.value += (ph.damping - U.uDamp.value) * (1 - Math.exp(-dt * 0.5));
+      U.uRingDecay.value += (ph.ringDecay - U.uRingDecay.value) * (1 - Math.exp(-dt * 0.5));
+
+      // A harsh, strained record has rougher water for its whole length, not
+      // only in the moments where the live analyser happens to catch a
+      // dissonance. Tension is a property of the song, so it belongs here with
+      // the rest of the identity rather than in the frame-by-frame reading.
+      U.uChaos.value = Math.min(1.2, U.uChaos.value + this.identity.tension * 0.40);
       this.bodyMat.uniforms.uGloss.value = mm.glassiness;
       this.bodyReflMat.uniforms.uGloss.value = mm.glassiness;
 
@@ -367,8 +355,6 @@ export class WaterArena {
       U.uVoicePitch.value += (v.pitch - U.uVoicePitch.value) * (1 - Math.exp(-dt * 9));
       U.uEffort.value += (v.effort - U.uEffort.value) * (1 - Math.exp(-dt * 5));
       U.uVibrato.value += (v.vibrato - U.uVibrato.value) * (1 - Math.exp(-dt * 4));
-      U.uVoicePhrase.value += (v.phrase - U.uVoicePhrase.value) * (1 - Math.exp(-dt * 5));
-      U.uVoiceOnset.value = Math.max(U.uVoiceOnset.value * Math.exp(-dt * 3.2), v.onset ? 1 : 0);
       U.uGrit.value += ((v.grit || 0) - U.uGrit.value) * (1 - Math.exp(-dt * 3));
     }
 

@@ -27,14 +27,19 @@ export const FIELD_GLSL = /* glsl */`
 #define MAX_IMPULSES 8
 
 uniform float uTime;
-uniform float uAmp, uBass, uMids, uHighs, uAir;
-uniform float uBeat, uBeatPulse, uBeatPhase;
-uniform float uScale, uSpectrumGain, uComplexity, uChaos, uFlow, uSymmetry;
-uniform float uRingRadius, uRingWidth;
+uniform float uAmp, uMids, uHighs;
+uniform float uScale, uComplexity, uChaos, uFlow;
+uniform float uRingRadius;
 uniform float uEruption, uShock, uAwake;
 uniform float uPace;    // 1.0 = 120 BPM; scales wavelength as well as speed
 uniform float uGrain;   // song identity: 0 glassy .. 1 broken and foaming
 uniform float uSpread;  // song identity: how wide the pool sits
+// How far a wave carries before it is gone. These were fixed constants, which
+// made reach the one obviously watery property the music could not touch: a
+// sustained legato record and a dry percussive one sent their swells exactly
+// the same distance. Low damping is an ocean, high damping is a puddle.
+uniform float uDamp;       // spatial decay per unit distance
+uniform float uRingDecay;  // how fast a struck ring dies with age
 uniform float uRadius;
 uniform float uForm[8];
 uniform sampler2D uSpectrum;
@@ -45,8 +50,8 @@ uniform sampler2D uSpectrum;
 // things you can ask for. Twelve floats in a uniform array are the same numbers
 // with none of the cost.
 uniform float uChromaV[12];
-uniform float uTonic, uMode, uConsonance, uHarmChange;
-uniform float uVoicePresence, uVoicePitch, uEffort, uVibrato, uVoiceOnset, uVoicePhrase, uGrit;
+uniform float uTonic, uMode;
+uniform float uVoicePresence, uVoicePitch, uEffort, uVibrato, uGrit;
 uniform vec4 uImpulseA[MAX_IMPULSES];   // xz origin, birth time, strength
 uniform vec4 uImpulseB[MAX_IMPULSES];   // speed, width, kind, -
 
@@ -89,7 +94,7 @@ float spec(float t) { return texture2D(uSpectrum, vec2(clamp(t, 0.0, 1.0), 0.5))
 float radiate(vec2 p, vec2 c, float amp, float k, float speed, float ph) {
   float d = distance(p, c);
   float spread = inversesqrt(1.0 + d * 0.55);
-  return sin(d * k - uTime * speed + ph) * amp * spread * exp(-d * 0.042);
+  return sin(d * k - uTime * speed + ph) * amp * spread * exp(-d * uDamp);
 }
 
 // ---------------------------------------------------------------------------
@@ -209,7 +214,7 @@ float impulses(vec2 p) {
     float dd = (d - age * B.x) / max(B.y, 0.4);
     // a leading crest with a short wake, spreading and dying like a real ring
     float ring = sin(dd * 2.4) * exp(-dd * dd);
-    float decay = exp(-age * 1.25) * inversesqrt(1.0 + d * 0.5);
+    float decay = exp(-age * uRingDecay) * inversesqrt(1.0 + d * 0.5);
     float kind = B.z > 1.5 ? 2.2 : (B.z > 0.5 ? 0.85 : 1.0);
     h += ring * decay * A.w * kind;
   }
@@ -311,24 +316,22 @@ float foamAt(vec2 p, float steep) {
 export function createFieldUniforms(THREE, spectrumTexture, radius) {
   return {
     uTime: { value: 0 },
-    uAmp: { value: 0 }, uBass: { value: 0 }, uMids: { value: 0 }, uHighs: { value: 0 }, uAir: { value: 0 },
-    uBeat: { value: 0 }, uBeatPulse: { value: 0 }, uBeatPhase: { value: 0 },
-    uScale: { value: 0.16 }, uSpectrumGain: { value: 0.1 }, uComplexity: { value: 0.1 },
-    uChaos: { value: 0.02 }, uFlow: { value: 0.3 }, uSymmetry: { value: 2 },
-    uRingRadius: { value: 9 }, uRingWidth: { value: 6 },
+    uAmp: { value: 0 }, uMids: { value: 0 }, uHighs: { value: 0 },
+    uScale: { value: 0.16 }, uComplexity: { value: 0.1 },
+    uChaos: { value: 0.02 }, uFlow: { value: 0.3 },
+    uRingRadius: { value: 9 },
     uEruption: { value: 0 }, uShock: { value: 0 }, uAwake: { value: 0.25 },
     uPace: { value: 0.75 },
     uGrain: { value: 0.3 }, uSpread: { value: 1.0 },
+    uDamp: { value: 0.042 }, uRingDecay: { value: 1.25 },
     uHeightRef: { value: 1.0 },
     uRadius: { value: radius },
     uForm: { value: new Float32Array(8) },
     uSpectrum: { value: spectrumTexture },
     uChromaV: { value: new Float32Array(12) },
     uTonic: { value: 0 }, uMode: { value: 0 },
-    uConsonance: { value: 0 }, uHarmChange: { value: 0 },
     uVoicePresence: { value: 0 }, uVoicePitch: { value: 0 }, uEffort: { value: 0 },
-    uVibrato: { value: 0 }, uVoiceOnset: { value: 0 }, uVoicePhrase: { value: 0 },
-    uGrit: { value: 0 },
+    uVibrato: { value: 0 }, uGrit: { value: 0 },
     uImpulseA: { value: Array.from({ length: 8 }, () => new THREE.Vector4()) },
     uImpulseB: { value: Array.from({ length: 8 }, () => new THREE.Vector4()) },
   };

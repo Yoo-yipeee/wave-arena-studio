@@ -9,8 +9,8 @@
 <script type="importmap">
 {
   "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    "three": "./vendor/three/three.module.min.js",
+    "three/addons/": "./vendor/three/addons/"
   }
 }
 </script>
@@ -534,7 +534,7 @@
     }
     window.addEventListener('error', function (e) {
       if (!reason && e && (e.filename || '').indexOf('three') > -1) {
-        reason = 'THREE.JS COULD NOT BE LOADED FROM THE CDN. A NETWORK BLOCK OR AN OFFLINE CONNECTION WILL DO THIS.';
+        reason = 'THE 3D ENGINE FAILED TO LOAD. RELOADING USUALLY FIXES IT.';
       }
     }, true);
     setTimeout(function () {

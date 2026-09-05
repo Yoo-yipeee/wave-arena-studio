@@ -307,11 +307,20 @@ function frame(now) {
 
   ui.update(now, engine, perf);
   if (started) {
+    // Key and tempo are read from the whole track before playback, so show that
+    // immediately and let the live analysis take over once it has converged.
+    // Waiting for the live reading left the chip blank through the whole intro
+    // of every song, which is the part where someone is deciding whether this
+    // is doing anything at all.
     const h = music.harmony;
+    const key = (h && h.tonicName && h.confidence > 0.25) ? h.tonicName
+      : (identity && identity.keyConfidence > 0.10 ? identity.keyName : null);
+    const bpm = music.bpm > 40 ? Math.round(music.bpm)
+      : (identity && identity.bpmOffline > 40 ? identity.bpmOffline : 0);
     ui.setInfo([
-      h && h.tonicName && h.confidence > 0.25 ? h.tonicName : null,
-      music.bpm > 40 ? Math.round(music.bpm) + ' BPM' : null,
-      identity ? identity.describe().hue + '\u00b0' : null,
+      key,
+      bpm ? bpm + ' BPM' : null,
+      identity ? Math.round(identity.hue) + '\u00b0' : null,
     ]);
   }
   if (recorder.recording) ui.setRecordTime(recorder.elapsed);

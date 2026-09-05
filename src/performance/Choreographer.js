@@ -264,18 +264,6 @@ export class Choreographer {
     return 'break';
   }
 
-  /**
-   * Low end arriving hard after an absence. The comparison window is several
-   * seconds wide on purpose: a build usually still has bass in it, so a short
-   * window sees no change and the drop goes undetected.
-   */
-  _bassSurge(m) {
-    const h = this._bassHist;
-    if (h.length < 180) return false;
-    const recent = avg(h.slice(-10));            // ~0.2 s
-    const before = avg(h.slice(0, 100));         // ~3-4 s ago
-    return recent > 0.55 && recent > before * 1.45 && m.kick > 0.22;
-  }
 
   /**
    * The other, more reliable signature: we have been building, and the music
