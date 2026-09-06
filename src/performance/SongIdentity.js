@@ -182,20 +182,77 @@ export class SongIdentity {
     // out identically frantic. No player articulates thirteen times a second;
     // 70ms between events is already fast for a human.
 
-    // Pulse: how strongly periodic the flux is over plausible beat periods.
-    // A peak that stands well clear of the mean means a steady grid underneath.
-    const minLag = Math.max(2, Math.round(fps * 0.30));    // 200 BPM
-    const maxLag = Math.min(frames - 2, Math.round(fps * 1.20));  // 50 BPM
-    let best = 0, acc = 0, cnt = 0;
+    // ---- tempo, by autocorrelation of the flux ----------------------------
+    //
+    // The largest peak wins, with sub-frame refinement. That is deliberately
+    // simple, and an attempt to improve it is worth recording because it
+    // failed instructively.
+    //
+    // Harmonic summing plus a log-normal prior around 120 BPM is the textbook
+    // improvement, and it is what fixed the LIVE tracker earlier. Applied here
+    // it scored better on a synthetic corpus and BROKE REAL MUSIC: the two slow
+    // records doubled, 63 BPM reading as 130 and 58 as 116, taking their
+    // arousal from 0.31 and 0.23 up to 0.57 and 0.49 — which is precisely the
+    // "slow song, fast water" fault this whole line of work exists to remove.
+    // The prior does that by construction: it is a thumb on the scale toward
+    // two beats a second, and a genuinely slow song is exactly what it pushes.
+    //
+    // The corpus that endorsed it was synthetic, and its strongest periodicity
+    // was not its beat, so it was not ground truth at all. Raw peak picking
+    // gets all four real records right. Left alone until there is real music
+    // that says otherwise.
+    const minLag = Math.max(2, Math.round(fps * 0.30));            // 200 BPM
+    const maxLag = Math.min(frames - 2, Math.round(fps * 1.20));   // 50 BPM
+    const ac = new Float32Array(maxLag + 1);
+    let best = 0, bestLag = 0, acc = 0, cnt = 0;
     for (let lag = minLag; lag <= maxLag; lag++) {
-      let s = 0;
-      for (let f = 0; f + lag < frames; f++) s += flux[f] * flux[f + lag];
-      s /= (frames - lag);
-      acc += s; cnt++;
-      if (s > best) { best = s; this.beatPeriod = lag / fps; }
+      let sum = 0;
+      for (let f = 0; f + lag < frames; f++) sum += flux[f] * flux[f + lag];
+      ac[lag] = sum / (frames - lag);
+      acc += ac[lag]; cnt++;
+      if (ac[lag] > best) { best = ac[lag]; bestLag = lag; }
     }
     const mean = acc / Math.max(1, cnt);
+
+    // Parabolic interpolation: the true period rarely lands exactly on a
+    // 512-sample frame boundary.
+    let refined = bestLag;
+    if (bestLag > minLag && bestLag < maxLag) {
+      const a = ac[bestLag - 1], b = ac[bestLag], c = ac[bestLag + 1];
+      const den = a - 2 * b + c;
+      if (Math.abs(den) > 1e-12) refined = bestLag + 0.5 * (a - c) / den;
+    }
     this.pulse = clamp01((best / Math.max(1e-12, mean) - 1.0) / 0.9);
+
+    // ---- one-sided octave correction --------------------------------------
+    //
+    // A backbeat on 2 and 4 makes the two-beat period correlate more strongly
+    // than the beat itself, so a driving track is often read at half speed. On
+    // a swept corpus that happened to seven of twenty-one: 128 read as 64, 150
+    // as 75. Halving is the mild failure — the water reads as half-time — while
+    // DOUBLING a slow song is the worst thing this system can do, and is the
+    // complaint that started all of this.
+    //
+    // So this only ever makes the tempo faster, never slower, and it refuses to
+    // act unless the grid is unambiguous. Loose, rubato, sung material is
+    // exactly where a doubling mistake would happen, and it is exactly where
+    // `pulse` is low, so that gate is doing real work rather than being a
+    // magic number: the two slow records here sit at 0.50 and 0.45 and are left
+    // alone, while the driving one sits at 1.0.
+    if (this.pulse > 0.88) {
+      const half = Math.round(bestLag / 2);
+      if (half >= minLag && ac[half] > best * 0.80 && (60 * fps / half) <= 150) {
+        bestLag = half;
+        refined = half;
+        if (half > minLag && half < maxLag) {
+          const a2 = ac[half - 1], b2 = ac[half], c2 = ac[half + 1];
+          const d2 = a2 - 2 * b2 + c2;
+          if (Math.abs(d2) > 1e-12) refined = half + 0.5 * (a2 - c2) / d2;
+        }
+      }
+    }
+
+    this.beatPeriod = refined > 0 ? refined / fps : 0;
     this.bpmOffline = this.beatPeriod ? Math.round(60 / this.beatPeriod) : 0;
 
     // AROUSAL, entirely offline.
