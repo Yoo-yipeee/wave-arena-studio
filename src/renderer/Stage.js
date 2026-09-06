@@ -450,7 +450,12 @@ export class CinematicCamera {
     if (evType === 'drop') return this.cut(Math.random() < 0.62 ? 'low' : 'close', true);
     if (evType === 'settle') return this.cut('overhead');
     if (evType === 'surge') return this.cut(Math.random() < 0.5 ? 'close' : 'wide');
-    if (section === 'QUIET' || section === 'STILL') return this.cut('overhead');
+    // Overhead is for showing the interference pattern when there IS one. On
+    // near-flat water it renders a disc of concentric rings seen from above,
+    // which reads as a radar screen rather than a pond — that is exactly what
+    // the quiet opening of a qawwali looked like. Quiet sections take the wide
+    // shot instead, where even a small swell is seen edge-on against a horizon.
+    if (section === 'QUIET' || section === 'STILL') return this.cut('wide');
     return this.cut(Math.random() < 0.5 ? 'wide' : 'low');
   }
 

@@ -370,8 +370,16 @@ export class SongIdentity {
     let bestMaj = -2, bestMin = -2, majRoot = 0, minRoot = 0;
     for (let r = 0; r < 12; r++) {
       for (let i = 0; i < 12; i++) rot[i] = chroma[(i + r) % 12];
-      const cMaj = pearson(rot, KK_MAJOR);
-      const cMin = pearson(rot, KK_MINOR);
+      // A tonic bonus. Krumhansl-Kessler correlates the whole profile, and a
+      // major key and its relative minor share all seven notes — so the two
+      // correlations come out nearly equal and the winner is close to a coin
+      // toss. Queen's Don't Stop Me Now, unambiguously F major, came back as
+      // D minor and rendered cyan instead of gold. The tonic itself is the
+      // evidence that separates them: whichever root is actually being leaned
+      // on is the key, so it gets a small thumb on the scale.
+      const tonicBonus = chroma[r] * 0.38;
+      const cMaj = pearson(rot, KK_MAJOR) + tonicBonus;
+      const cMin = pearson(rot, KK_MINOR) + tonicBonus;
       if (cMaj > bestMaj) { bestMaj = cMaj; majRoot = r; }
       if (cMin > bestMin) { bestMin = cMin; minRoot = r; }
     }
@@ -502,7 +510,11 @@ export class SongIdentity {
     // autocorrelated fast, not to slow everything down.
     const ta = this.arousalTimbre;
     if (ta < 0.45) t = Math.max(t, 1.05 + (0.45 - ta) * 2.4);
-    return Math.max(0.55, Math.min(3.0, t));
+    // A tighter range than before. Tempo is wrong often enough that its errors
+    // must not be able to produce water nobody would call watery: a folk dance
+    // track read 50% fast and got a 0.71s swell, quicker than the rock single,
+    // which is not a reading of the music, it is a reading of the mistake.
+    return Math.max(0.85, Math.min(2.35, t));
   }
 
   /**
@@ -601,8 +613,14 @@ export class SongIdentity {
     // emerald and gold is antifreeze. The path is allowed to cross it — a very
     // bright major record has to get from teal to gold somehow — but it is not
     // allowed to saturate there.
-    const lime = Math.abs(hue - 100);
-    if (lime < 55) chroma *= 1 - 0.55 * (1 - lime / 55);
+    // Widened and strengthened. Across twelve real records four landed in the
+    // green half of the ramp and one — a Hindi rap track at valence 0.80 — came
+    // out at hue 88, which is olive, not water. Turquoise and emerald above 150
+    // are real lagoon colours and survive; everything between is pulled toward
+    // neutral, so a song that has to cross reads as pale water rather than as
+    // pond scum.
+    const lime = Math.abs(hue - 112);
+    if (lime < 62) chroma *= 1 - 0.78 * (1 - lime / 62);
 
     // ---- equal-looking, not equal-numbered ---------------------------------
     //
@@ -734,13 +752,19 @@ const HUE_RAMP = [
   [0.00, 258],   // deep indigo-blue — desolate
   [0.18, 236],   // blue — melancholy
   [0.36, 208],   // blue-cyan — pensive
-  [0.52, 182],   // cyan-teal — the signature, and where the neutral song sits
-  [0.64, 168],   // turquoise — hopeful
-  [0.76, 150],   // emerald — a real lagoon colour, and the last green that is
-  [0.80, 104],   // the lime crossing, four points wide and desaturated below
-  [0.84, 54],    // amber
+  [0.56, 182],   // cyan-teal — the signature, and where the neutral song sits
+  [0.72, 165],   // turquoise — hopeful
+  [0.84, 150],   // emerald — a real lagoon colour, and the last green that is
+  [0.87, 132],   // ...and then the crossing is taken almost at once, because
+  [0.90, 62],    // amber        every degree between here and amber is olive
   [1.00, 38],    // gold — joy
 ];
+// The wide bands are the ones water can actually be — indigo through cyan and
+// turquoise to emerald on one side, amber to gold on the other — and the arc
+// between them is crossed in three hundredths of a valence unit. Spread over a
+// tenth, as it was, real songs sat in it: a Hindi rap track came out olive and
+// an EDM record came out lime. The zones are sized by where music lands, not
+// by an even division of the wheel.
 function rampHue(v) {
   const t = clamp01(v);
   for (let i = 1; i < HUE_RAMP.length; i++) {
