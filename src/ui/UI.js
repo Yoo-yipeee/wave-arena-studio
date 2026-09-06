@@ -17,6 +17,7 @@ export class UI {
       micBtn: document.getElementById('micBtn'),
       setBtn: document.getElementById('setBtn'),
       setupBtn: document.getElementById('setupBtn'),
+      testsetBtn: document.getElementById('testsetBtn'),
       fileInput: document.getElementById('fileInput'),
       loading: document.getElementById('loading'),
       loadingLabel: document.getElementById('loadingLabel'),
@@ -92,6 +93,7 @@ export class UI {
     e.tabBtn.addEventListener('click', () => this.emit('tab'));
     e.setBtn.addEventListener('click', () => this.emit('settings'));
     e.setupBtn.addEventListener('click', () => this.emit('settings'));
+    e.testsetBtn.addEventListener('click', () => this.emit('testset'));
 
     // drag & drop anywhere on the page
     let dragDepth = 0;

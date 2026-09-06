@@ -5,6 +5,16 @@ performs it as a body of water.**
 
 ### ▶ [Open it](https://yoo-yipeee.github.io/wave-arena-studio/) — no install, no sign-up, no upload
 
+![WAVE ARENA](docs/hero.jpg)
+
+<p align="center">
+  <img src="docs/violet.jpg" width="49%" alt="Blinding Lights — DESOLATE, Cm, 85 BPM, blue" />
+  <img src="docs/gold.jpg" width="49%" alt="Girls Like You — SERENE, C, gold" />
+</p>
+
+<p align="center"><em>Three songs, three worlds. Nobody chose those colours by
+hand — the key, the mode and the pace did.</em></p>
+
 Not a spectrum analyser with a nice skin. Before a single frame is drawn it
 finds the key and the mode, the tempo and how much to trust it, the lead vocal
 and how hard it is being sung, where the drops are, and how loud the song is
@@ -27,6 +37,38 @@ never leaves your machine — there is no server, no upload, and no account.
 
 There is also **ENTER DEMO** — an 88-second track synthesised on the fly, with a
 real arrangement, so you can see it work with nothing to hand.
+
+### The test set
+
+**TRY THE TEST SET** on the landing page lists the fourteen songs this build was
+tuned against, together with **what the analyser actually reads in each one** —
+before you play it, so the claim is on the table first and you can catch it
+being wrong.
+
+| | | | |
+|---|---|---|---|
+| Bohemian Rhapsody — Queen | SERENE | D# | **gold** |
+| Girls Like You — Maroon 5 | SERENE | C · 58? BPM | **gold** |
+| Wake Me Up — Avicii | WARM | D · 115 BPM | **chartreuse** |
+| Apna Time Aayega — DIVINE | EUPHORIC | F# · 115 BPM | **mint** |
+| Gallan Goodiyaan | SERENE | D · 60 BPM | **emerald** |
+| Ghoomar — Padmaavat | EUPHORIC | D? · 169 BPM | **turquoise** |
+| Kun Faya Kun — A. R. Rahman | POISED | C#? · 88? BPM | **turquoise** |
+| Believer — Imagine Dragons | DRIVING | 125 BPM | **cyan** |
+| Someone Like You — Adele | STILL | 67 BPM | **cyan** |
+| Tum Hi Ho — Arijit Singh | DRIVING | Fm? · 188? BPM | **cyan** |
+| Don't Stop Me Now — Queen | STILL | Dm · 78 BPM | **azure** |
+| Blinding Lights — The Weeknd | DESOLATE | Cm · 85 BPM | **blue** |
+| HUMBLE. — Kendrick Lamar | BROODING | Cm · 75 BPM | **indigo** |
+| Millionaire — Yo Yo Honey Singh | BROODING | Dm · 96 BPM | **indigo** |
+
+A **?** marks a reading the analyser's own confidence estimate does not stand
+behind — see [What is still wrong](#what-is-still-wrong). Those are not
+excuses; they are the two known faults, printed where you can see them.
+
+**The audio is not shipped with this app.** It is commercial music, and
+"nothing is uploaded, nothing is stored" is a promise this project makes on its
+own landing page. The list links out; **PLAY FROM A TAB** carries the song in.
 
 ---
 
@@ -178,7 +220,7 @@ src/
     shaders/materials.js    surface shading, foam, subsurface scattering
   renderer/
     Stage.js                scene, post-processing, adaptive quality
-  ui/                       UI, settings, touch, clip recorder
+  ui/                       UI, settings, touch, clip recorder, the test set
 ```
 
 Two files carry most of the interesting decisions: **`SongIdentity.js`** (what

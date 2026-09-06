@@ -19,6 +19,7 @@ import { UI } from './ui/UI.js';
 import { Touch } from './ui/Touch.js';
 import { Recorder } from './ui/Recorder.js';
 import { Settings } from './ui/Settings.js';
+import { TestSet } from './ui/TestSet.js';
 
 const quality = detectQuality();
 const stage = new Stage(document.getElementById('stage'), quality);
@@ -51,6 +52,11 @@ settings.onChange = (v) => {
   if (identity) { identity.paletteMode = v.palette; identity._recompute(); arena.setIdentity(identity); }
 };
 ui.on.settings = () => settings.toggle();
+
+// The fourteen songs this build was tuned against. The audio is not shipped —
+// it is commercial music — so the list links out and tab capture carries it in.
+const testSet = new TestSet();
+ui.on.testset = () => testSet.toggle();
 
 ui.on.record = () => {
   if (!Recorder.supported) { ui.toast('RECORDING IS NOT SUPPORTED IN THIS BROWSER'); return; }
