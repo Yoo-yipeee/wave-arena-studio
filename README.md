@@ -8,12 +8,14 @@ performs it as a body of water.**
 ![WAVE ARENA](docs/hero.jpg)
 
 <p align="center">
-  <img src="docs/violet.jpg" width="49%" alt="Blinding Lights — DESOLATE, Cm, 85 BPM, blue" />
-  <img src="docs/gold.jpg" width="49%" alt="Girls Like You — SERENE, C, gold" />
+  <img src="docs/gold.jpg" width="32.5%" alt="SERENE, C — gold" />
+  <img src="docs/violet.jpg" width="32.5%" alt="DESOLATE, Cm, 85 BPM — blue" />
+  <img src="docs/indigo.jpg" width="32.5%" alt="Ossuary — DESOLATE, Dm — indigo" />
 </p>
 
-<p align="center"><em>Three songs, three worlds. Nobody chose those colours by
-hand — the key, the mode and the pace did.</em></p>
+<p align="center"><em>Four songs, four worlds. Nobody chose those colours by
+hand — the key, the mode and the pace did. The last one ships with the app;
+click it yourself.</em></p>
 
 Not a spectrum analyser with a nice skin. Before a single frame is drawn it
 finds the key and the mode, the tempo and how much to trust it, the lead vocal
@@ -38,26 +40,32 @@ never leaves your machine — there is no server, no upload, and no account.
 There is also **ENTER DEMO** — an 88-second track synthesised on the fly, with a
 real arrangement, so you can see it work with nothing to hand.
 
-### Four songs that ship with it
+### Seven songs that ship with it
 
-**PICK A SONG** on the landing page has four real tracks built in. One click and
+**PICK A SONG** on the landing page has seven real tracks built in. One click and
 the water is moving — no file, no second tab, no microphone. It is also the only
 entry point that works on iOS, where tab capture doesn't exist.
 
-| | | |
+They were picked to **span the colour path**, not for being the seven best pieces
+of music. One song looking good proves nothing; the claim this project makes is
+that different songs are read *differently*, and you can only check that by
+clicking down the list and watching the arena change character.
+
+| | what it reads | |
 |---|---|---|
 | Carefree | SERENE · F · 48 BPM | **gold** |
 | Monkeys Spinning Monkeys | WARM · C · 72? BPM | **emerald** |
 | Sneaky Snitch | WARM · D · 87? BPM | **emerald** |
 | Cipher | DRIVING · E · 149 BPM | **turquoise** |
+| The Descent | DESOLATE · Bm? | **azure** |
+| Anguish | BROODING · Fm | **blue** |
+| Ossuary 1 — A Beginning | DESOLATE · Dm | **indigo** |
 
-All four are by **Kevin MacLeod** ([incompetech.com](https://incompetech.com/)),
+Gold to indigo is about 220° of hue, and nobody chose any of it by hand.
+
+All seven are by **Kevin MacLeod** ([incompetech.com](https://incompetech.com/)),
 licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — see
 [demo-audio/CREDITS.md](demo-audio/CREDITS.md).
-
-They are all fairly cheerful, so they cluster in the warm half of the colour
-path. To see the range properly — the blues and indigos — you want the test set
-below.
 
 ### The test set
 

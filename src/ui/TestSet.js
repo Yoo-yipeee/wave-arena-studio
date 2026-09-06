@@ -32,13 +32,19 @@ const SWATCH = {
  */
 const DEMOS = [
   { file: 'carefree',                 t: 'Carefree',                 a: 'Kevin MacLeod',
-    mood: 'SERENE',  key: 'F', bpm: '48',  c: 'GOLD' },
+    mood: 'SERENE',   key: 'F',   bpm: '48',  c: 'GOLD' },
   { file: 'monkeys-spinning-monkeys', t: 'Monkeys Spinning Monkeys', a: 'Kevin MacLeod',
-    mood: 'WARM',    key: 'C', bpm: '72?', c: 'EMERALD' },
+    mood: 'WARM',     key: 'C',   bpm: '72?', c: 'EMERALD' },
   { file: 'sneaky-snitch',            t: 'Sneaky Snitch',            a: 'Kevin MacLeod',
-    mood: 'WARM',    key: 'D', bpm: '87?', c: 'EMERALD' },
+    mood: 'WARM',     key: 'D',   bpm: '87?', c: 'EMERALD' },
   { file: 'cipher',                   t: 'Cipher',                   a: 'Kevin MacLeod',
-    mood: 'DRIVING', key: 'E', bpm: '149', c: 'TURQUOISE' },
+    mood: 'DRIVING',  key: 'E',   bpm: '149', c: 'TURQUOISE' },
+  { file: 'the-descent',              t: 'The Descent',              a: 'Kevin MacLeod',
+    mood: 'DESOLATE', key: 'Bm?', bpm: '',    c: 'AZURE' },
+  { file: 'anguish',                  t: 'Anguish',                  a: 'Kevin MacLeod',
+    mood: 'BROODING', key: 'Fm',  bpm: '',    c: 'BLUE' },
+  { file: 'ossuary',                  t: 'Ossuary 1 — A Beginning',  a: 'Kevin MacLeod',
+    mood: 'DESOLATE', key: 'Dm',  bpm: '',    c: 'INDIGO' },
 ];
 
 /** Not shipped. Links out; PLAY FROM A TAB carries them in. */
