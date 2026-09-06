@@ -21,8 +21,18 @@ export class AudioEngine {
 
     this.onEnded = null;
     this.onTrackLoaded = null;
-    this.live = false;        // listening to a microphone rather than a file
+    this.live = false;        // listening to a live signal rather than a file
+    this.liveSource = '';     // 'mic' | 'tab'
+    this.onLiveEnded = null;  // sharing was stopped, or the shared tab closed
     this._liveStart = 0;
+  }
+
+  /**
+   * Tab audio needs getDisplayMedia, which iOS Safari does not have at all.
+   * The entry button asks first so it can hide itself rather than fail.
+   */
+  static get tabAudioSupported() {
+    return !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
   }
 
   /** Must be called from a user gesture. */
@@ -128,12 +138,63 @@ export class AudioEngine {
    * whatever the room can hear.
    */
   async useMicrophone() {
-    this.ensureContext();
-    await this.resume();
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
     });
+    return this._attachLiveStream(stream, 'mic', 'LIVE INPUT');
+  }
+
+  /**
+   * Listen to another browser tab instead of a file.
+   *
+   * This is the shortest path from "a song" to "this song on screen": almost
+   * nobody keeps loose mp3s any more, but everybody has a tab playing
+   * something. It is also a better signal than the microphone — the audio is
+   * taken digitally, so there is no room, no speaker and no echo in it.
+   *
+   * Chrome only offers the "share tab audio" checkbox when video is requested
+   * alongside, so we have to ask for a video track and then throw it away
+   * immediately. We never read a frame of it.
+   *
+   * Nothing here changes the privacy promise: the stream is wired to the
+   * analysers only, exactly like the microphone, and never to the destination
+   * (the tab the user picked is already making the sound — routing it onward
+   * would double it) and never off the machine.
+   */
+  async useTabAudio() {
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    });
+    for (const v of stream.getVideoTracks()) v.stop();
+
+    const [track] = stream.getAudioTracks();
+    if (!track) {
+      // Picking a whole screen or window, or forgetting the checkbox, yields
+      // video only. That is the single most likely way this goes wrong, so it
+      // gets its own code and its own sentence in the UI.
+      for (const t of stream.getTracks()) t.stop();
+      const err = new Error('no audio track in the shared surface');
+      err.code = 'NO_TAB_AUDIO';
+      throw err;
+    }
+    // Stopping the share from Chrome's own bar ends the track, not our stream.
+    track.addEventListener('ended', () => { if (this.onLiveEnded) this.onLiveEnded(); });
+    return this._attachLiveStream(stream, 'tab', 'TAB AUDIO');
+  }
+
+  /**
+   * Wire a live MediaStream into the analysers.
+   *
+   * Analysers ONLY, never `ctx.destination`: for the microphone that would be
+   * an instant feedback loop through whatever the room can hear, and for a tab
+   * it would play the song a second time on top of itself.
+   */
+  async _attachLiveStream(stream, kind, title) {
+    this.ensureContext();
+    await this.resume();
     this.stop();
+    this.stopLive();
     this._micStream = stream;
     this._micSrc = this.ctx.createMediaStreamSource(stream);
     for (const node of [this.analyser, this.harmonyAnalyser, this._splitter]) {
@@ -141,19 +202,24 @@ export class AudioEngine {
     }
     this.buffer = null;
     this.live = true;
+    this.liveSource = kind;
     this.playing = true;
-    this.title = 'LIVE INPUT';
+    this.title = title;
     this._liveStart = this.ctx.currentTime;
     if (this.onTrackLoaded) this.onTrackLoaded(this);
     return stream;
   }
 
-  stopMicrophone() {
+  stopLive() {
     if (this._micSrc) { try { this._micSrc.disconnect(); } catch (e) {} this._micSrc = null; }
     if (this._micStream) { for (const t of this._micStream.getTracks()) t.stop(); this._micStream = null; }
     this.live = false;
+    this.liveSource = '';
     this.playing = false;
   }
+
+  /** Kept as the old name so nothing that already calls it has to change. */
+  stopMicrophone() { this.stopLive(); }
 
   play() {
     if (this.live) { this.playing = true; return; }

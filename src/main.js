@@ -73,6 +73,10 @@ stage.onContextRestored = () => {
 // The module got this far, so three.js resolved and the renderer built.
 document.body.classList.add('booted');
 
+// Tab audio is the shortest way in, but it does not exist on iOS Safari, so
+// the button asks before it offers itself.
+ui.enableTabEntry(AudioEngine.tabAudioSupported);
+
 let analyser = null;
 let identity = null;
 let awake = 0.22;          // how "alive" the field is: landing 0.22 -> performance 1
@@ -101,6 +105,9 @@ const idleMusic = {
 // ---------------------------------------------------------------------------
 // Track loading
 // ---------------------------------------------------------------------------
+/** Let the renderer paint before the next blocking step. */
+const nextFrame = () => new Promise(r => requestAnimationFrame(() => r()));
+
 async function beginTrack(loader, label) {
   ui.showLoading(label);
   try {
@@ -120,11 +127,23 @@ async function beginTrack(loader, label) {
 
   // Read the whole track before a single frame is drawn: level envelope for the
   // scrubber, loudness reference for the analyser, structure for the plan.
+  //
+  // These two steps run on the main thread for a few hundred milliseconds on a
+  // long song, and they used to run back to back immediately after the decode,
+  // so the idle water froze mid-motion — which reads as the page having hung
+  // at exactly the moment the viewer is deciding whether this thing works.
+  // Yielding a frame between them costs nothing and keeps the arena alive
+  // through the wait, and naming each step means the wait says what it is
+  // doing rather than showing an unmoving bar.
+  ui.setLoadingLabel('READING THE LEVELS');
+  await nextFrame();
   const env = computePeaks(engine.buffer);
   const { peaks, refRms } = env;
   analyser.resetTrack(refRms);
   choreo.resetTrack(new TrackPlan(env, refRms, engine.duration));
 
+  ui.setLoadingLabel('FINDING THE KEY AND THE PULSE');
+  await nextFrame();
   // The song's world, decided before a frame is drawn.
   identity = new SongIdentity(engine.buffer, env);
   identity.paletteMode = settings.get('palette');
@@ -146,7 +165,11 @@ async function beginTrack(loader, label) {
   engine.play();
   ui.setPlaying(true);
   ui.hideEnded();
-  ui.showHint();
+  // The reading the decode resolves into. It lands with the first frames
+  // rather than after them, so the wait ends in the answer instead of in
+  // nothing, and the hint waits its turn rather than fighting the card.
+  ui.showIdentity(identity.card());
+  setTimeout(() => ui.showHint(), 4600);
 }
 
 ui.on.file = (file) => {
@@ -166,15 +189,36 @@ ui.on.demo = () => {
   }, 'COMPOSING DEMO PERFORMANCE');
 };
 
-ui.on.mic = async () => {
+ui.on.mic = () => beginLive(() => engine.useMicrophone(), 'LISTENING', 'mic');
+
+/**
+ * Play from another browser tab.
+ *
+ * This is the entry that matters. Everything else assumes the viewer has a
+ * loose audio file, and almost nobody does any more — they have a tab with
+ * something already playing in it. Taking the audio from that tab is both the
+ * shortest way in and a cleaner signal than the microphone.
+ */
+ui.on.tab = () => beginLive(() => engine.useTabAudio(), 'PICK THE TAB', 'tab');
+
+async function beginLive(getStream, label, kind) {
   engine.ensureContext();
-  ui.showLoading('LISTENING');
+  ui.showLoading(label);
   try {
-    await engine.useMicrophone();
+    await getStream();
   } catch (err) {
-    console.error(err);
     ui.hideLoading();
-    ui.toast('COULD NOT ACCESS THE MICROPHONE');
+    // Cancelling the picker is a decision, not a failure, and must not be
+    // shouted at the viewer as though something broke.
+    if (err && (err.name === 'NotAllowedError' || err.name === 'AbortError')) return;
+    console.error(err);
+    if (err && err.code === 'NO_TAB_AUDIO') {
+      ui.toast('NO AUDIO IN THAT SHARE — PICK A TAB AND TICK "SHARE TAB AUDIO"');
+    } else if (kind === 'tab') {
+      ui.toast('COULD NOT CAPTURE THAT TAB');
+    } else {
+      ui.toast('COULD NOT ACCESS THE MICROPHONE');
+    }
     return;
   }
   if (!analyser) analyser = new MusicAnalyser(
@@ -193,13 +237,17 @@ ui.on.mic = async () => {
   choreo.identity = identity;
 
   ui.hideLoading();
-  ui.enterPerformance('LIVE INPUT', 0, new Float32Array(0));
+  ui.enterPerformance(engine.title, 0, new Float32Array(0));
   ui.setLive(true);
   ui.setPlaying(true);
-  ui.showHint();
+  ui.hideEnded();
+  // A live signal has no future to read, so the card says what it is reading
+  // rather than claiming a key and a tempo it cannot yet know.
+  ui.showIdentity(identity.card(), 3400);
+  setTimeout(() => ui.showHint(), 3800);
   camera.impulse(0.5);
   started = true;
-};
+}
 
 ui.on.toggle = () => {
   if (!engine.buffer) return;
@@ -212,8 +260,20 @@ ui.on.seek = (p) => { engine.seek(p * engine.duration); };
 ui.on.nudge = (d) => { engine.seek(engine.currentTime + d); };
 ui.on.volume = (v) => engine.setVolume(v);
 
+// Chrome's own "stop sharing" bar can end a tab capture at any moment, and
+// without this the arena keeps performing a signal that is no longer arriving.
+engine.onLiveEnded = () => {
+  if (!engine.live) return;
+  engine.stopLive();
+  ui.setLive(false);
+  ui.setPlaying(false);
+  ui.backToLanding();
+  started = false;
+  ui.toast('SHARING STOPPED');
+};
+
 ui.on.reset = () => {
-  if (engine.live) engine.stopMicrophone();
+  if (engine.live) engine.stopLive();
   ui.setLive(false);
   engine.rewind();
   ui.setPlaying(false);
@@ -231,15 +291,33 @@ ui.on.loop = () => { looping = !looping; ui.setLoop(looping); };
  * hunt for it with a record button. Starts a little early so the run-up is in
  * frame, because a drop with nothing before it does not read as a drop.
  */
+/**
+ * Where the song's biggest moment is, or -1 if we cannot say.
+ *
+ * TrackPlan located the drops before playback began, so this is a known
+ * timestamp rather than something anyone should have to hunt for.
+ */
+function bestMoment() {
+  if (!engine.buffer || !choreo.plan) return -1;
+  const drops = choreo.plan.drops;
+  if (drops.length) {
+    return drops.reduce((a, b) => (choreo.plan.levelAt(b) > choreo.plan.levelAt(a) ? b : a));
+  }
+  return engine.duration > 20 ? engine.duration * 0.55 : -1;
+}
+
+function formatClock(s) {
+  const m = Math.floor(s / 60), r = Math.floor(s % 60);
+  return m + ':' + String(r).padStart(2, '0');
+}
+
 ui.on.moment = () => {
   if (!Recorder.supported) { ui.toast('RECORDING IS NOT SUPPORTED IN THIS BROWSER'); return; }
   if (!engine.buffer || !choreo.plan) { ui.toast('PLAY SOMETHING FIRST'); return; }
   if (recorder.recording) { recorder.stop(); return; }
 
-  const drops = choreo.plan.drops;
-  const best = drops.length
-    ? drops.reduce((a, b) => (choreo.plan.levelAt(b) > choreo.plan.levelAt(a) ? b : a))
-    : engine.duration * 0.55;
+  const found = bestMoment();
+  const best = found >= 0 ? found : engine.duration * 0.55;
 
   const lead = 3.5, len = 13;
   engine.seek(Math.max(0, best - lead));
@@ -252,8 +330,13 @@ ui.on.again = () => { engine.rewind(); engine.play(); ui.setPlaying(true); };
 engine.onEnded = () => {
   ui.setPlaying(false);
   if (looping) { engine.rewind(); engine.play(); ui.setPlaying(true); return; }
-  // Say so, and offer the two things anyone actually wants next.
-  ui.showEnded();
+  // Say so, and offer the things anyone actually wants next — including the
+  // clip, which is the only one of them they can take away with them.
+  const best = bestMoment();
+  ui.showEnded({
+    clip: Recorder.supported && best >= 0,
+    at: best >= 0 ? formatClock(best) : '',
+  });
   // Nothing to damp here: with playback stopped the analyser decays to silence
   // on its own and the arena settles. Forcing the field down instead left the
   // water at a fraction of its height for the whole of any replay.

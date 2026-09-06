@@ -460,6 +460,7 @@ export class SongIdentity {
       keyRoot: 0, keyMode: 0, keyConfidence: 0, consonance: 0,
       warmth: 0.5, drive: 0.45, settled: 0, paletteMode: 'full',
       hue: 0, sat: 0, light: 0,
+      _live: true,
     });
     id._recompute();
     return id;
@@ -715,9 +716,105 @@ export class SongIdentity {
       settled: +this.settled.toFixed(2),
     };
   }
+
+  /**
+   * What to show the viewer about the song, in their language rather than ours.
+   *
+   * All of this was already computed and none of it was ever visible, so the
+   * water read as decoration — pretty shapes that might or might not have
+   * anything to do with the music. Naming the key, the tempo and the mood is
+   * what turns it into a reading.
+   *
+   * Confidence is reported, not hidden. Key detection cannot separate a major
+   * from its relative minor when a song leans on the shared notes, and tempo
+   * estimation halves and doubles; both are stated here as facts we already
+   * know about the method. A value we do not trust is marked so the viewer
+   * discounts it, and one we really cannot stand behind is withheld entirely —
+   * far better than confidently printing something the ear can hear is wrong.
+   */
+  card() {
+    const kc = this.keyConfidence, tc = this.tempoConfidence;
+
+    // A tempo that disagrees with the timbre is the signature of an octave
+    // error, and periodicity alone cannot see it: counting every subdivision
+    // of a slow ballad gives a confidently periodic — and confidently wrong —
+    // number. Tum Hi Ho reads 188 against a true 56 and does it with a high
+    // pulse score, so `tempoConfidence` on its own will happily assert it.
+    //
+    // Attack and brightness never look at rhythm, so they cannot make the same
+    // mistake. When the pace they imply and the pace the tempo implies are far
+    // apart, the tempo is the one to doubt, and the card says so rather than
+    // printing a number the ear can hear is wrong.
+    const tempoImplied = clamp01(((this.bpmOffline || 100) - 60) / 100);
+    const agrees = Math.abs(tempoImplied - this.arousalTimbre) < 0.42;
+
+    return {
+      key: kc > 0.22 ? this.keyName : '',
+      keySure: kc > 0.46,
+      bpm: tc > 0.26 && this.bpmOffline ? this.bpmOffline : 0,
+      bpmSure: tc > 0.52 && agrees,
+      mood: moodWord(this.valence, this.arousal),
+      colour: hueName(this.hue),
+      hue: Math.round(this.hue),
+      valence: +this.valence.toFixed(2),
+      arousal: +this.arousal.toFixed(2),
+      // palette() returns linear {r,g,b} for the shader; the DOM needs CSS.
+      swatch: cssRgb(this.palette().mid),
+      glow: cssRgb(this.palette().hot),
+      live: !!this._live,
+    };
+  }
 }
 
 function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+
+/**
+ * One word for where the song sits on Russell's circumplex.
+ *
+ * The grid is deliberately coarse. Three bands each way is about as fine as
+ * valence and arousal can be trusted from audio alone, and a word that is
+ * merely close reads as insight, while a precise-sounding one that is wrong
+ * reads as a broken toy.
+ */
+const MOOD_GRID = [
+  // arousal low -> high, for each valence band (low, mid, high)
+  ['DESOLATE', 'BROODING', 'FURIOUS'],
+  ['STILL', 'POISED', 'DRIVING'],
+  ['SERENE', 'WARM', 'EUPHORIC'],
+];
+function moodWord(valence, arousal) {
+  const band = (v) => (v < 0.38 ? 0 : v < 0.62 ? 1 : 2);
+  return MOOD_GRID[band(valence)][band(arousal)];
+}
+
+/**
+ * The colour the viewer is actually looking at, named.
+ *
+ * The upper edge of each band, not its centre. Hue 60 is yellow and has to
+ * come out as GOLD — calling it chartreuse (which is nearer 90) described the
+ * water as a colour it visibly was not, which is worse than saying nothing.
+ *
+ * The name also has to survive low saturation, where a hue reads as its muted
+ * cousin: a desaturated gold looks khaki. Naming the hue rather than the
+ * rendered pixel keeps the card consistent with the palette the song was
+ * actually given.
+ */
+const HUE_NAMES = [
+  [20, 'AMBER'], [68, 'GOLD'], [95, 'CHARTREUSE'], [140, 'MINT'],
+  [166, 'EMERALD'], [186, 'TURQUOISE'], [202, 'CYAN'], [222, 'AZURE'],
+  [250, 'BLUE'], [278, 'INDIGO'], [302, 'VIOLET'], [338, 'MAGENTA'], [360, 'AMBER'],
+];
+function hueName(h) {
+  const hue = ((h % 360) + 360) % 360;
+  for (const [edge, name] of HUE_NAMES) if (hue <= edge) return name;
+  return 'AMBER';
+}
+
+/** palette() is linear 0..1 for the shader; the DOM wants 0..255 sRGB-ish. */
+function cssRgb(c) {
+  const ch = (v) => Math.max(0, Math.min(255, Math.round(v * 255)));
+  return 'rgb(' + ch(c.r) + ',' + ch(c.g) + ',' + ch(c.b) + ')';
+}
 
 const PC_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 

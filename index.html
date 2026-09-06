@@ -111,6 +111,16 @@
   .entry .demo-btn{margin-top:0}
   .demo-btn.ghost{border-color:rgba(95,217,255,.12);color:rgba(233,247,255,.55)}
   .demo-btn.ghost:hover{border-color:rgba(95,217,255,.5);color:#fff}
+  /* The shortest path to "my song on screen" reads as the primary way in. */
+  .demo-btn.tab-btn{
+    border-color:rgba(95,217,255,.45);color:#eaf8ff;
+    background:rgba(16,44,72,.42);box-shadow:0 0 30px rgba(60,180,255,.10);
+  }
+  .demo-btn.tab-btn:hover{border-color:rgba(140,235,255,.85);box-shadow:0 0 42px rgba(60,180,255,.22)}
+  .entry-note{
+    margin-top:14px;font-size:8px;letter-spacing:.26em;
+    color:rgba(233,247,255,.30);text-align:center;
+  }
   .live-badge{
     display:none;font-size:8.5px;letter-spacing:.3em;color:#ff8a8a;
     border:1px solid rgba(255,120,120,.35);padding:5px 10px;border-radius:2px;
@@ -126,7 +136,54 @@
   #loading{
     position:fixed;inset:0;z-index:13;display:none;
     align-items:center;justify-content:center;flex-direction:column;gap:22px;
-    background:rgba(0,2,8,.55);backdrop-filter:blur(3px);
+    /* Was an opaque wash with a blur, which hid the arena for the whole decode
+       and made a 3s wait feel like a stall. The water is already alive behind
+       this — let it be seen, and keep only enough veil to hold the label. */
+    background:radial-gradient(ellipse at center,rgba(0,2,8,.10),rgba(0,2,8,.55));
+  }
+
+  /* IDENTITY CARD — the reveal the decode resolves into ------------------- */
+  #idcard{
+    position:fixed;z-index:19;left:50%;top:50%;
+    transform:translate(-50%,-50%) scale(.965);
+    display:flex;align-items:center;gap:22px;
+    padding:24px 34px 24px 26px;
+    border:1px solid rgba(95,217,255,.16);border-radius:3px;
+    background:linear-gradient(180deg,rgba(8,22,38,.62),rgba(4,10,20,.72));
+    backdrop-filter:blur(10px);
+    opacity:0;pointer-events:none;
+    transition:opacity .9s ease,transform .9s cubic-bezier(.2,.9,.2,1);
+  }
+  #idcard.on{opacity:1;transform:translate(-50%,-50%) scale(1)}
+  .idc-swatch{width:52px;height:52px;flex:0 0 52px;position:relative}
+  /* The song's own water colour, lit by its own crest colour. A dark palette
+     would otherwise read as a black hole on a dark card. */
+  .idc-swatch i{
+    position:absolute;inset:0;border-radius:50%;
+    background:var(--idc-mid,#7fd8ff);
+    box-shadow:0 0 30px 3px var(--idc-hot,#bfefff),
+               inset 0 0 14px 2px var(--idc-hot,#bfefff);
+  }
+  .idc-mood{
+    font-size:17px;letter-spacing:.30em;text-indent:.30em;
+    color:#eaf8ff;margin-bottom:9px;
+  }
+  .idc-facts{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+  .idc-facts b{
+    font-weight:400;font-size:9px;letter-spacing:.26em;text-indent:.26em;
+    color:rgba(233,247,255,.78);
+  }
+  /* A reading we do not fully trust must not look like one we do. */
+  .idc-facts b.soft{color:rgba(233,247,255,.34)}
+  .idc-facts i{width:1px;height:9px;background:rgba(95,217,255,.22);display:inline-block}
+  .idc-read{
+    margin-top:11px;font-size:7.5px;letter-spacing:.24em;
+    color:rgba(233,247,255,.26);white-space:nowrap;
+  }
+  @media (max-width:560px){
+    #idcard{gap:16px;padding:18px 22px;width:min(86vw,340px)}
+    .idc-swatch{width:40px;height:40px;flex:0 0 40px}
+    .idc-mood{font-size:14px}
   }
   #loading.on{display:flex}
   #loading .lbl{font-size:9.5px;letter-spacing:.42em;color:var(--dim);text-indent:.42em}
@@ -301,6 +358,13 @@
     background:rgba(10,26,44,.4);border:1px solid rgba(95,217,255,.3);
     color:rgba(233,247,255,.88);padding:15px 30px;transition:all .4s ease;
   }
+  /* The clip is the thing anyone actually wants to leave with, so it leads. */
+  #ended button.primary{
+    border-color:rgba(140,235,255,.6);color:#fff;
+    background:rgba(18,52,84,.55);box-shadow:0 0 30px rgba(60,180,255,.14);
+  }
+  #ended button.primary:hover{box-shadow:0 0 46px rgba(60,180,255,.3)}
+  #ended .sub{font-size:8px;letter-spacing:.26em;color:rgba(233,247,255,.28);text-align:center}
   #ended button:hover{border-color:rgba(95,217,255,.85);background:rgba(20,70,120,.4);box-shadow:0 0 34px rgba(50,170,255,.2)}
 
   /* ---------- first-run hint ---------- */
@@ -400,9 +464,11 @@
 
     <div class="split"><i></i>OR<i></i></div>
     <div class="entry">
-      <button class="demo-btn" id="demoBtn">ENTER DEMO</button>
+      <button class="demo-btn tab-btn" id="tabBtn" hidden>PLAY FROM A TAB</button>
+      <button class="demo-btn ghost" id="demoBtn">ENTER DEMO</button>
       <button class="demo-btn ghost" id="micBtn">USE MICROPHONE</button>
     </div>
+    <div class="entry-note" id="tabNote" hidden>PLAY ANYTHING IN ANOTHER TAB &mdash; SPOTIFY, YOUTUBE &mdash; AND PICK IT</div>
 
     <button class="setup-link" id="setupBtn">HOW YOU WANT IT</button>
 
@@ -413,6 +479,16 @@
   <div id="loading">
     <div class="bar"><i></i></div>
     <div class="lbl" id="loadingLabel">PREPARING PERFORMANCE</div>
+  </div>
+
+  <!-- IDENTITY CARD ------------------------------------------------------- -->
+  <div id="idcard" aria-live="polite">
+    <div class="idc-swatch"><i id="idcSwatch"></i></div>
+    <div class="idc-body">
+      <div class="idc-mood" id="idcMood">POISED</div>
+      <div class="idc-facts" id="idcFacts"></div>
+      <div class="idc-read" id="idcRead">THE WATER IS READING THIS SONG</div>
+    </div>
   </div>
 
   <!-- HUD ---------------------------------------------------------------- -->
@@ -489,9 +565,11 @@
   <div id="ended">
     <div class="ttl">PERFORMANCE COMPLETE</div>
     <div class="row">
+      <button id="bestBtn" class="primary" hidden>SAVE THE BEST BIT</button>
       <button id="againBtn">PLAY AGAIN</button>
       <button id="anotherBtn">NEW SONG</button>
     </div>
+    <div class="sub" id="endedSub" hidden></div>
   </div>
 
   <div id="hint">

@@ -49,7 +49,16 @@ export class UI {
       ended: document.getElementById('ended'),
       againBtn: document.getElementById('againBtn'),
       anotherBtn: document.getElementById('anotherBtn'),
+      bestBtn: document.getElementById('bestBtn'),
+      endedSub: document.getElementById('endedSub'),
       hint: document.getElementById('hint'),
+      tabBtn: document.getElementById('tabBtn'),
+      tabNote: document.getElementById('tabNote'),
+      idcard: document.getElementById('idcard'),
+      idcSwatch: document.getElementById('idcSwatch'),
+      idcMood: document.getElementById('idcMood'),
+      idcFacts: document.getElementById('idcFacts'),
+      idcRead: document.getElementById('idcRead'),
     };
 
     this.on = {};                 // { file, demo, toggle, seek, volume, reset }
@@ -80,6 +89,7 @@ export class UI {
     });
     e.demoBtn.addEventListener('click', () => this.emit('demo'));
     e.micBtn.addEventListener('click', () => this.emit('mic'));
+    e.tabBtn.addEventListener('click', () => this.emit('tab'));
     e.setBtn.addEventListener('click', () => this.emit('settings'));
     e.setupBtn.addEventListener('click', () => this.emit('settings'));
 
@@ -108,6 +118,7 @@ export class UI {
     e.loopBtn.addEventListener('click', () => this.emit('loop'));
     e.againBtn.addEventListener('click', () => { this.hideEnded(); this.emit('again'); });
     e.anotherBtn.addEventListener('click', () => { this.hideEnded(); this.emit('reset'); });
+    e.bestBtn.addEventListener('click', () => { this.hideEnded(); this.emit('moment'); });
 
     // The HUD must never hide while the pointer is on it, or controls vanish
     // out from under the cursor mid-reach.
@@ -163,8 +174,69 @@ export class UI {
       .map(t => `<b>${t}</b>`).join('<i></i>');
   }
 
-  showEnded() { this.el.ended.classList.add('on'); }
+  /**
+   * @param {{clip:boolean, at:string}} opts  whether a best moment is offerable
+   *
+   * The clip recorder and the hands-free "biggest moment" capture were both
+   * already built and both lived behind icons in the transport, which is to
+   * say nobody found them. The end of a song is the one moment we know the
+   * viewer liked it enough to sit through it, so that is where the offer goes.
+   */
+  showEnded(opts) {
+    const o = opts || {};
+    this.el.bestBtn.hidden = !o.clip;
+    this.el.endedSub.hidden = !o.clip;
+    if (o.clip) {
+      this.el.endedSub.textContent = o.at
+        ? 'THE BIGGEST MOMENT, AT ' + o.at + ' · RECORDED LOCALLY'
+        : 'RECORDED LOCALLY';
+    }
+    this.el.ended.classList.add('on');
+  }
   hideEnded() { this.el.ended.classList.remove('on'); }
+
+  /** Tab audio only exists where getDisplayMedia does. */
+  enableTabEntry(on) {
+    this.el.tabBtn.hidden = !on;
+    this.el.tabNote.hidden = !on;
+  }
+
+  /**
+   * The song's reading, revealed once the analysis has landed.
+   *
+   * Everything shown here was already being computed and none of it was ever
+   * visible, which left the water looking decorative. Naming the key, the
+   * tempo and the mood is what makes it legible as a reading of the song —
+   * and marking the readings we do not trust is what keeps it honest when the
+   * key detector picks the relative minor.
+   */
+  showIdentity(card, holdMs) {
+    const e = this.el;
+    e.idcMood.textContent = card.mood;
+    e.idcSwatch.style.setProperty('--idc-mid', card.swatch);
+    e.idcSwatch.style.setProperty('--idc-hot', card.glow);
+
+    const parts = [];
+    if (card.key) parts.push({ t: card.key, soft: !card.keySure });
+    if (card.bpm) parts.push({ t: card.bpm + ' BPM', soft: !card.bpmSure });
+    parts.push({ t: card.colour, soft: false });
+    e.idcFacts.innerHTML = parts
+      .map(p => `<b class="${p.soft ? 'soft' : ''}">${p.t}</b>`)
+      .join('<i></i>');
+
+    e.idcRead.textContent = card.live
+      ? 'READING THE SIGNAL AS IT ARRIVES'
+      : 'READ FROM THE WHOLE TRACK FIRST';
+
+    e.idcard.classList.add('on');
+    clearTimeout(this._idcTimer);
+    this._idcTimer = setTimeout(() => e.idcard.classList.remove('on'), holdMs || 4200);
+  }
+
+  hideIdentity() {
+    clearTimeout(this._idcTimer);
+    this.el.idcard.classList.remove('on');
+  }
 
   /** Shown once, the first time a performance starts. */
   showHint() {
@@ -210,6 +282,8 @@ export class UI {
     this.el.loadingLabel.textContent = label;
     this.el.loading.classList.add('on');
   }
+  /** Name the step in progress, so the wait reads as work rather than a stall. */
+  setLoadingLabel(label) { this.el.loadingLabel.textContent = label; }
   hideLoading() { this.el.loading.classList.remove('on'); }
 
   enterPerformance(title, duration, peaks) {
@@ -226,6 +300,8 @@ export class UI {
     this.el.hud.classList.remove('on');
     this.el.hud.classList.remove('idle');
     this.el.wordmark.style.opacity = '';
+    this.hideIdentity();
+    this.hideEnded();
   }
 
   /** Live input has no timeline, so the transport controls step aside. */
