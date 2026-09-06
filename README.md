@@ -9,12 +9,14 @@ Press **ENTER DEMO** for a built-in track, drop in an mp3 of your own, or use
 **USE MICROPHONE** and play to it. Audio is decoded and analysed entirely in
 your browser and never leaves your machine.
 
-**This is the one to use.** The four repos it grew out of are the development
-lineage, each one a step:
-[wave-arena](https://github.com/Yoo-yipeee/wave-arena) (instrumental) ·
-[voice](https://github.com/Yoo-yipeee/wave-arena-voice) (vocal-led) ·
-[world](https://github.com/Yoo-yipeee/wave-arena-world) (a world per song, calm orbit) ·
-[cinema](https://github.com/Yoo-yipeee/wave-arena-cinema) (breaking water, cutting camera)
+**This is the one to use.** It is the superset: the camera, colour, caustics
+and touch options that used to be separate builds are settings here, chosen
+after you can see what they do.
+
+There is one other build, and it is a genuinely different reading rather than a
+preset — [**WAVE ARENA VOICE**](https://github.com/Yoo-yipeee/wave-arena-voice)
+([open it](https://yoo-yipeee.github.io/wave-arena-voice/)), where the singer
+leads instead of the mix.
 
 ---
 
