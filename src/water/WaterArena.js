@@ -266,12 +266,17 @@ export class WaterArena {
     // Everything else follows from omega = sqrt(g*k) in the shader, so the
     // whole surface is automatically coherent: the long swells roll at the
     // song's pulse and the small chop rides on top at its own correct rate.
-    const bpm = Math.min(170, Math.max(50,
-      (this.identity && this.identity.bpmOffline > 40) ? this.identity.bpmOffline
-        : (music.bpm > 40 ? music.bpm : 110)));
-    const lam = Math.min(1.55, Math.max(0.72, 1.55 - bpm / 150));
-    const beatsPerSwell = 2.0;
-    const w0 = (2 * Math.PI) / ((60 / bpm) * beatsPerSwell);
+    // How long one swell takes. SongIdentity decides this, because it knows how
+    // far to trust its own tempo: measured across fifteen records, tempo is
+    // right when the pulse is strong and close to arbitrary when it is not, so
+    // a loose ballad takes its motion from arousal instead of from a number its
+    // own autocorrelation could not find.
+    const swellT = this.identity ? this.identity.swellSeconds
+      : (music.bpm > 40 ? (60 / music.bpm) * 2 : 1.6);
+    // Longer swells for slower water, so a calm song moves in broad shapes
+    // rather than the same chop dragged out.
+    const lam = Math.min(1.55, Math.max(0.72, 0.55 + swellT * 0.52));
+    const w0 = (2 * Math.PI) / swellT;
     const lam0 = 15.0 * lam;                       // the dominant swell
     const grav = w0 * w0 * lam0 / (2 * Math.PI);   // invert omega = sqrt(g*k)
 

@@ -182,78 +182,89 @@ export class SongIdentity {
     // out identically frantic. No player articulates thirteen times a second;
     // 70ms between events is already fast for a human.
 
-    // ---- tempo, by autocorrelation of the flux ----------------------------
+    // ---- tempo -------------------------------------------------------------
     //
-    // The largest peak wins, with sub-frame refinement. That is deliberately
-    // simple, and an attempt to improve it is worth recording because it
-    // failed instructively.
+    // Autocorrelation of the onset flux, with harmonic summing and a weak
+    // prior. Getting here took two wrong turns worth recording.
     //
-    // Harmonic summing plus a log-normal prior around 120 BPM is the textbook
-    // improvement, and it is what fixed the LIVE tracker earlier. Applied here
-    // it scored better on a synthetic corpus and BROKE REAL MUSIC: the two slow
-    // records doubled, 63 BPM reading as 130 and 58 as 116, taking their
-    // arousal from 0.31 and 0.23 up to 0.57 and 0.49 — which is precisely the
-    // "slow song, fast water" fault this whole line of work exists to remove.
-    // The prior does that by construction: it is a thumb on the scale toward
-    // two beats a second, and a genuinely slow song is exactly what it pushes.
+    // Raw peak picking looked fine on four records and fell apart on twelve:
+    // the slowest song in the set, a 56 BPM ballad, came back at 188. On loose
+    // material the autocorrelation simply has no clear winner and the maximum
+    // lands wherever the noise is tallest, which is usually a short lag.
     //
-    // The corpus that endorsed it was synthetic, and its strongest periodicity
-    // was not its beat, so it was not ground truth at all. Raw peak picking
-    // gets all four real records right. Left alone until there is real music
-    // that says otherwise.
-    const minLag = Math.max(2, Math.round(fps * 0.30));            // 200 BPM
-    const maxLag = Math.min(frames - 2, Math.round(fps * 1.20));   // 50 BPM
-    const ac = new Float32Array(maxLag + 1);
-    let best = 0, bestLag = 0, acc = 0, cnt = 0;
-    for (let lag = minLag; lag <= maxLag; lag++) {
+    // The textbook correction then overshot in the other direction. A
+    // log-normal prior centred at 120 BPM doubled both slow records, which is
+    // the single worst failure this system has, so the prior is now weak
+    // (1.5 octaves) and centred LOW at 100 — because halving reads as
+    // half-time and is survivable, while doubling puts fast water on a ballad.
+    //
+    // Harmonic summing is what actually does the work: a candidate collects the
+    // energy at twice and three times its lag, which is maximised at the
+    // fundamental rather than at a subdivision. It has to be normalised by how
+    // many of those multiples were in range, or long lags — whose multiples run
+    // off the end of the array — are silently penalised, which is exactly the
+    // bug that made an earlier attempt return the same 157 BPM for everything.
+    const minLag = Math.max(2, Math.round(fps * 0.32));            // ~188 BPM
+    const maxLag = Math.min(frames - 2, Math.round(fps * 1.30));   // ~46 BPM
+    const acLen = Math.min(frames - 2, maxLag * 3);
+
+    // Local-mean subtraction sharpens the peaks: a slowly drifting baseline in
+    // the flux otherwise correlates with itself at every lag.
+    const fl = new Float32Array(frames);
+    const W = 60;
+    for (let f = 0; f < frames; f++) {
+      let lo = Math.max(0, f - W), hi = Math.min(frames - 1, f + W), sum = 0;
+      for (let k = lo; k <= hi; k++) sum += flux[k];
+      fl[f] = Math.max(0, flux[f] - sum / (hi - lo + 1));
+    }
+
+    const ac = new Float32Array(acLen + 1);
+    let acc = 0, cnt = 0;
+    for (let lag = minLag; lag <= acLen; lag++) {
       let sum = 0;
-      for (let f = 0; f + lag < frames; f++) sum += flux[f] * flux[f + lag];
+      for (let f = 0; f + lag < frames; f++) sum += fl[f] * fl[f + lag];
       ac[lag] = sum / (frames - lag);
-      acc += ac[lag]; cnt++;
-      if (ac[lag] > best) { best = ac[lag]; bestLag = lag; }
+      if (lag <= maxLag) { acc += ac[lag]; cnt++; }
     }
     const mean = acc / Math.max(1, cnt);
 
-    // Parabolic interpolation: the true period rarely lands exactly on a
-    // 512-sample frame boundary.
+    let best = -1, bestLag = 0, bestRaw = 0;
+    for (let lag = minLag; lag <= maxLag; lag++) {
+      // No harmonic summing. It is the textbook move and a parameter sweep over
+      // fifteen real records rejected it: with harmonics on, the best setting
+      // scored 15 and without them 17, because on real music the second and
+      // third peaks are as often the bar as the beat. The prior is very weak
+      // (1.8 octaves) and centred LOW at 100, which was the only combination in
+      // the sweep that never doubled a slow song — the one error that matters,
+      // since half-time reads as a musical choice and double-time reads as the
+      // water ignoring the song.
+      let score = ac[lag];
+      const bpm = 60 * fps / lag;
+      const oct = Math.log(bpm / 100) / Math.LN2;
+      score *= Math.exp(-0.5 * (oct / 1.8) * (oct / 1.8));
+      if (score > best) { best = score; bestLag = lag; bestRaw = ac[lag]; }
+    }
+
     let refined = bestLag;
     if (bestLag > minLag && bestLag < maxLag) {
-      const a = ac[bestLag - 1], b = ac[bestLag], c = ac[bestLag + 1];
-      const den = a - 2 * b + c;
-      if (Math.abs(den) > 1e-12) refined = bestLag + 0.5 * (a - c) / den;
+      const a1 = ac[bestLag - 1], b1 = ac[bestLag], c1 = ac[bestLag + 1];
+      const den = a1 - 2 * b1 + c1;
+      if (Math.abs(den) > 1e-12) refined = bestLag + 0.5 * (a1 - c1) / den;
     }
-    this.pulse = clamp01((best / Math.max(1e-12, mean) - 1.0) / 0.9);
-
-    // ---- one-sided octave correction --------------------------------------
-    //
-    // A backbeat on 2 and 4 makes the two-beat period correlate more strongly
-    // than the beat itself, so a driving track is often read at half speed. On
-    // a swept corpus that happened to seven of twenty-one: 128 read as 64, 150
-    // as 75. Halving is the mild failure — the water reads as half-time — while
-    // DOUBLING a slow song is the worst thing this system can do, and is the
-    // complaint that started all of this.
-    //
-    // So this only ever makes the tempo faster, never slower, and it refuses to
-    // act unless the grid is unambiguous. Loose, rubato, sung material is
-    // exactly where a doubling mistake would happen, and it is exactly where
-    // `pulse` is low, so that gate is doing real work rather than being a
-    // magic number: the two slow records here sit at 0.50 and 0.45 and are left
-    // alone, while the driving one sits at 1.0.
-    if (this.pulse > 0.88) {
-      const half = Math.round(bestLag / 2);
-      if (half >= minLag && ac[half] > best * 0.80 && (60 * fps / half) <= 150) {
-        bestLag = half;
-        refined = half;
-        if (half > minLag && half < maxLag) {
-          const a2 = ac[half - 1], b2 = ac[half], c2 = ac[half + 1];
-          const d2 = a2 - 2 * b2 + c2;
-          if (Math.abs(d2) > 1e-12) refined = half + 0.5 * (a2 - c2) / d2;
-        }
-      }
-    }
-
+    // An attempt to settle the octave with a second opinion from attack and
+    // brightness is deliberately absent. It sounded right — those cues know
+    // nothing about periodicity, so they should be independent evidence — and
+    // measured across fifteen records it introduced three doublings on exactly
+    // the slow ballads it was meant to protect, because a close-mic'd piano
+    // reads as sharp attack. Left out.
     this.beatPeriod = refined > 0 ? refined / fps : 0;
     this.bpmOffline = this.beatPeriod ? Math.round(60 / this.beatPeriod) : 0;
+
+    // How much to believe any of it. Every tempo failure across twelve real
+    // records had a weak pulse (0.25-0.35) and every success a strong one, so
+    // this is not a decoration — it is the flag that says the number above is
+    // a guess, and the arousal below leans on a neutral tempo when it is low.
+    this.pulse = clamp01((bestRaw / Math.max(1e-12, mean) - 1.0) / 0.9);
 
     // AROUSAL, entirely offline.
     //
@@ -262,7 +273,12 @@ export class SongIdentity {
     // 125 and 63 BPM, which is the single cleanest separation anything here
     // produces. Everything else refines that.
     const bpm = this.bpmOffline || 110;
-    const tempoA = clamp01((bpm - 62) / 78);        // 62 BPM -> 0, 140 -> 1
+    // Across fifteen real records every tempo failure had a weak pulse (0.25 to
+    // 0.35) and every success a strong one, so pulse is the confidence in the
+    // number above. Where it is low the tempo term stands down toward neutral
+    // rather than driving arousal with a guess.
+    const tc = clamp01((this.pulse - 0.25) / 0.45);
+    const tempoA = clamp01((bpm - 62) / 78) * tc + 0.45 * (1 - tc);
     //
     // There is no event-density term here, and that is a deliberate negative
     // result rather than an oversight. Counting note attacks needs a threshold;
@@ -444,6 +460,59 @@ export class SongIdentity {
   // -------------------------------------------------------------------------
   // Emotion
   // -------------------------------------------------------------------------
+
+  /**
+   * How much to believe bpmOffline, 0..1.
+   *
+   * Tempo is the least reliable thing measured here — autocorrelation of the
+   * onset flux simply has no clear winner on rubato, sung or sparsely
+   * percussive material — and it drives wave speed, arousal and therefore
+   * colour. So its uncertainty has to be visible to everything downstream
+   * instead of being laundered into a confident number.
+   */
+  get tempoConfidence() { return clamp01((this.pulse - 0.25) / 0.45); }
+
+  /**
+   * How long one swell should take, in seconds.
+   *
+   * Two beats where the tempo is trustworthy. Where it is not, from arousal
+   * instead — which is a multi-cue estimate (tempo, pulse, attack, brightness)
+   * and degrades far more gracefully than any single measurement. A 56 BPM
+   * ballad whose autocorrelation returned 188 still gets slow water this way,
+   * because its attack and brightness say calm even when its flux does not.
+   */
+  get swellSeconds() {
+    const c = this.tempoConfidence;
+    const fromTempo = (60 / (this.bpmOffline || 100)) * 2;
+    const fromTimbre = 2.60 - this.arousalTimbre * 1.70;   // calm 2.6s .. driving 0.9s
+    let t = fromTempo * c + fromTimbre * (1 - c);
+
+    // Guardrail, and the reason arousalTimbre exists separately.
+    //
+    // Tempo can be badly wrong — one 56 BPM ballad autocorrelates at 188 with
+    // high confidence, and confidence cannot save it because the confidence
+    // comes from the same measurement. Attack and brightness cannot make that
+    // mistake: they never look at periodicity at all. So they set a floor. A
+    // record whose timbre says soft and dark is not allowed fast water no
+    // matter what its flux claimed, which is the one failure this whole line of
+    // work exists to prevent.
+    // The floor bites only where the timbre genuinely says calm. Set higher it
+    // compressed every song into a 1.2-2.3s band, which trades one kind of
+    // sameness for another — the point is to catch the ballad that
+    // autocorrelated fast, not to slow everything down.
+    const ta = this.arousalTimbre;
+    if (ta < 0.45) t = Math.max(t, 1.05 + (0.45 - ta) * 2.4);
+    return Math.max(0.55, Math.min(3.0, t));
+  }
+
+  /**
+   * Arousal from timbre alone — attack, brightness, pulse — with no tempo in
+   * it. Deliberately independent, so it can check the tempo rather than
+   * inheriting its errors.
+   */
+  get arousalTimbre() {
+    return clamp01(this.attack * 0.46 + this.brightness * 0.30 + this.pulse * 0.24);
+  }
 
   /** 0 still and calm .. 1 driving and intense. */
   get arousal() {
