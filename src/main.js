@@ -105,8 +105,22 @@ const idleMusic = {
 // ---------------------------------------------------------------------------
 // Track loading
 // ---------------------------------------------------------------------------
-/** Let the renderer paint before the next blocking step. */
-const nextFrame = () => new Promise(r => requestAnimationFrame(() => r()));
+/**
+ * Let the renderer paint before the next blocking step.
+ *
+ * requestAnimationFrame does not fire in a tab that is not compositing — a
+ * background tab, a minimised window, an occluded pane. Waiting on it alone
+ * meant that dropping a song and then switching tabs left the load parked
+ * forever on "READING THE LEVELS", which is a thing people genuinely do while
+ * a file decodes. The timeout guarantees the analysis finishes either way; the
+ * frame is a nicety for when someone is actually watching.
+ */
+const nextFrame = () => new Promise(resolve => {
+  let done = false;
+  const go = () => { if (!done) { done = true; resolve(); } };
+  requestAnimationFrame(go);
+  setTimeout(go, 120);
+});
 
 async function beginTrack(loader, label) {
   ui.showLoading(label);
