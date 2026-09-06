@@ -58,6 +58,18 @@ ui.on.settings = () => settings.toggle();
 const testSet = new TestSet();
 ui.on.testset = () => testSet.toggle();
 
+// The shipped Creative Commons tracks. This is the only entry point that needs
+// nothing whatsoever from the viewer — no file, no second tab, no microphone —
+// and the only one that works on iOS, where tab capture does not exist.
+testSet.onPlay = (path, title) => {
+  engine.ensureContext();
+  beginTrack(async () => {
+    const res = await fetch(path);
+    if (!res.ok) throw new Error('demo fetch failed: ' + res.status);
+    await engine.loadArrayBuffer(await res.arrayBuffer(), title);
+  }, 'LOADING ' + title.toUpperCase());
+};
+
 ui.on.record = () => {
   if (!Recorder.supported) { ui.toast('RECORDING IS NOT SUPPORTED IN THIS BROWSER'); return; }
   if (!engine.buffer) { ui.toast('PLAY SOMETHING FIRST'); return; }

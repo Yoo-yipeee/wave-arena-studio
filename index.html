@@ -404,20 +404,38 @@
     color:rgba(233,247,255,.42);
   }
   .ts-sub b,.ts-foot b{color:rgba(233,247,255,.8);font-weight:400}
-  .ts-rows{
-    margin:20px 0 4px;overflow-y:auto;display:flex;flex-direction:column;
+  .ts-scroll{
+    margin:18px 0 4px;overflow-y:auto;
     scrollbar-width:thin;scrollbar-color:rgba(95,217,255,.22) transparent;
   }
-  .ts-rows::-webkit-scrollbar{width:6px}
-  .ts-rows::-webkit-scrollbar-track{background:transparent}
-  .ts-rows::-webkit-scrollbar-thumb{background:rgba(95,217,255,.22);border-radius:3px}
-  .ts-rows::-webkit-scrollbar-thumb:hover{background:rgba(95,217,255,.4)}
+  .ts-scroll::-webkit-scrollbar{width:6px}
+  .ts-scroll::-webkit-scrollbar-track{background:transparent}
+  .ts-scroll::-webkit-scrollbar-thumb{background:rgba(95,217,255,.22);border-radius:3px}
+  .ts-scroll::-webkit-scrollbar-thumb:hover{background:rgba(95,217,255,.4)}
+  .ts-group{
+    font-size:8px;letter-spacing:.34em;color:rgba(95,217,255,.55);
+    padding:16px 10px 9px;border-bottom:1px solid rgba(95,217,255,.12);
+  }
+  .ts-group:first-child{padding-top:2px}
+  .ts-group em{
+    display:block;margin-top:7px;font-style:normal;letter-spacing:.14em;
+    font-size:8px;line-height:1.9;color:rgba(233,247,255,.3);
+  }
+  .ts-rows{display:flex;flex-direction:column}
   .ts-row{
-    display:flex;align-items:center;gap:14px;padding:11px 10px;
-    text-decoration:none;border-bottom:1px solid rgba(95,217,255,.06);
+    display:flex;align-items:center;gap:14px;padding:11px 10px;width:100%;
+    text-decoration:none;border:0;border-bottom:1px solid rgba(95,217,255,.06);
+    background:none;font-family:inherit;text-align:left;
     transition:background .25s ease;
   }
   .ts-row:hover{background:rgba(95,217,255,.06)}
+  /* The shipped tracks play instantly, so they read as the primary action. */
+  .ts-play{cursor:pointer}
+  .ts-play .ts-name b{color:#eaf8ff}
+  .ts-play::after{
+    content:'▶';margin-left:6px;font-size:8px;color:rgba(95,217,255,.5);
+    flex:0 0 auto;
+  }
   .ts-dot{
     width:11px;height:11px;flex:0 0 11px;border-radius:50%;
     background:var(--c);box-shadow:0 0 12px 1px var(--c);
@@ -479,6 +497,7 @@
   }
   .set-done:hover{border-color:rgba(95,217,255,.8);background:rgba(20,70,120,.3)}
 
+  .setup-link.strong{color:rgba(220,238,255,.6);border-bottom-color:rgba(95,217,255,.25)}
   .setup-link{
     margin-top:22px;background:none;border:0;cursor:pointer;font-family:inherit;
     font-size:8.5px;letter-spacing:.3em;text-indent:.3em;color:rgba(220,238,255,.28);
@@ -531,7 +550,7 @@
     </div>
     <div class="entry-note" id="tabNote" hidden>PLAY ANYTHING IN ANOTHER TAB &mdash; SPOTIFY, YOUTUBE &mdash; AND PICK IT</div>
 
-    <button class="setup-link" id="testsetBtn">TRY THE TEST SET &mdash; 14 SONGS</button>
+    <button class="setup-link strong" id="testsetBtn">PICK A SONG &mdash; 4 READY TO PLAY</button>
     <button class="setup-link" id="setupBtn">HOW YOU WANT IT</button>
 
     <div class="landing-foot">AUDIO IS ANALYSED LOCALLY IN YOUR BROWSER &middot; NOTHING IS UPLOADED</div>

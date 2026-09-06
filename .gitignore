@@ -5,5 +5,8 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Local test audio — never commit copyrighted material
+# Local test audio — never commit copyrighted material.
+# demo-audio/ IS committed on purpose: those four tracks are CC BY 4.0 and are
+# cleared for redistribution. Everything else you drop in to test with goes
+# here, and stays here.
 test-audio/

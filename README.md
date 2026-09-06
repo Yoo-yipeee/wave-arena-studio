@@ -38,6 +38,27 @@ never leaves your machine — there is no server, no upload, and no account.
 There is also **ENTER DEMO** — an 88-second track synthesised on the fly, with a
 real arrangement, so you can see it work with nothing to hand.
 
+### Four songs that ship with it
+
+**PICK A SONG** on the landing page has four real tracks built in. One click and
+the water is moving — no file, no second tab, no microphone. It is also the only
+entry point that works on iOS, where tab capture doesn't exist.
+
+| | | |
+|---|---|---|
+| Carefree | SERENE · F · 48 BPM | **gold** |
+| Monkeys Spinning Monkeys | WARM · C · 72? BPM | **emerald** |
+| Sneaky Snitch | WARM · D · 87? BPM | **emerald** |
+| Cipher | DRIVING · E · 149 BPM | **turquoise** |
+
+All four are by **Kevin MacLeod** ([incompetech.com](https://incompetech.com/)),
+licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — see
+[demo-audio/CREDITS.md](demo-audio/CREDITS.md).
+
+They are all fairly cheerful, so they cluster in the warm half of the colour
+path. To see the range properly — the blues and indigos — you want the test set
+below.
+
 ### The test set
 
 **TRY THE TEST SET** on the landing page lists the fourteen songs this build was
