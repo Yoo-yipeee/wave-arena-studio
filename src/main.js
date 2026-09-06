@@ -290,7 +290,7 @@ function frame(now) {
     else if (ev.type === 'settle') camera.cutFor('settle', perf.section);
     else if (ev.type === 'surge') { camera.impulse(0.35 + ev.strength * 1.6); camera.cutFor('surge', perf.section); }
     else if (ev.type === 'section') { camera.impulse(0.22); camera.cutFor('section', ev.to); }
-    else if (ev.type === 'kick' && perf.section === 'drop') camera.impulse(0.07 * ev.strength);
+    else if (ev.type === 'kick' && perf.level > 0.72) camera.impulse(0.07 * ev.strength);
   }
 
   // Derived, never assigned from events — an event-driven version got stuck at

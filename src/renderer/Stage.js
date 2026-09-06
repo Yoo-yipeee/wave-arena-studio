@@ -450,7 +450,7 @@ export class CinematicCamera {
     if (evType === 'drop') return this.cut(Math.random() < 0.62 ? 'low' : 'close', true);
     if (evType === 'settle') return this.cut('overhead');
     if (evType === 'surge') return this.cut(Math.random() < 0.5 ? 'close' : 'wide');
-    if (section === 'break' || section === 'intro') return this.cut('overhead');
+    if (section === 'QUIET' || section === 'STILL') return this.cut('overhead');
     return this.cut(Math.random() < 0.5 ? 'wide' : 'low');
   }
 

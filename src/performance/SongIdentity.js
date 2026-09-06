@@ -478,9 +478,24 @@ export class SongIdentity {
     const lime = Math.abs(hue - 100);
     if (lime < 55) chroma *= 1 - 0.55 * (1 - lime / 55);
 
+    // ---- equal-looking, not equal-numbered ---------------------------------
+    //
+    // HSL lightness is not perceptual, and the error is enormous: a fully
+    // saturated yellow carries roughly ten times the luminance of a fully
+    // saturated blue at the SAME lightness value. So identical numbers gave a
+    // gold song a far brighter frame than a blue one — the acoustic cover
+    // washed out to cream with no dark background left and none of the depth
+    // the blue tracks kept, purely because of where its hue sits.
+    //
+    // Bright hues are pulled down toward the luminance a blue would have had.
+    // Only down, never up: this must not brighten anything that already works.
+    const probe = hsl(hue, 1, 0.5);
+    const Y = 0.2126 * probe.r + 0.7152 * probe.g + 0.0722 * probe.b;
+    const lumComp = Math.min(1, Math.pow(0.45 / Math.max(0.08, Y), 0.30));
+
     this.hue = hue;
     this.sat = clamp01(chroma);
-    this.light = clamp01(l);
+    this.light = clamp01(l * lumComp);
   }
 
   /** deep / mid / hot triad for the water, as {r,g,b} in 0..1 */

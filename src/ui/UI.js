@@ -1,16 +1,8 @@
 import { formatTime } from '../audio/AudioEngine.js';
 
-const SECTION_LABEL = {
-  silence: 'STILL',
-  intro: 'INTRO',
-  verse: 'FLOW',
-  build: 'BUILD',
-  drop: 'DROP',
-  chorus: 'CHORUS',
-  break: 'BREAK',
-  outro: 'OUTRO',
-};
-const HOT_SECTIONS = new Set(['drop', 'chorus', 'build']);
+// The Choreographer emits its own display label now — there is no section
+// machine left to translate from.
+const HOT_SECTIONS = new Set(['DROP', 'PEAK', 'BUILD', 'LIFT']);
 
 /**
  * UI — every DOM concern lives here.
@@ -270,7 +262,7 @@ export class UI {
       e.tCur.textContent = formatTime(engine.currentTime);
     }
 
-    const label = SECTION_LABEL[perf.section] || '';
+    const label = perf.section || '';
     if (label !== this._sectionShown) {
       this._sectionShown = label;
       e.stateLabel.textContent = label;

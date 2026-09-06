@@ -85,8 +85,14 @@ void main() {
   // does not contain, so the water read as grey while the floor and the
   // backdrop were visibly warm. Half the song's own highlight colour keeps the
   // sun-on-water look without arguing with the palette.
+  // The highlight terms below are ADDITIVE and they all peak together on a
+  // crest. Measured on the glassiest of four test tracks they summed to 2.49 —
+  // two and a half times full white before tone mapping had even run — so every
+  // crest clipped and the frame went cream. They are scaled to land near 1.2 at
+  // their joint peak, which leaves ACES something to roll off instead of a
+  // value it can only clamp.
   vec3 specTint = mix(vec3(0.82, 0.90, 1.0), uHot, 0.5);
-  col += specTint * spe * (0.28 + uHeat * 0.55);
+  col += specTint * spe * (0.16 + uHeat * 0.26);
   col += uMid * diff * 0.06;
   col *= 1.0 - deepness * 0.62;
 
@@ -98,11 +104,16 @@ void main() {
   vec3 sssDir = normalize(-L1 + N * 0.55);
   float back = pow(clamp(dot(V, sssDir), 0.0, 1.0), 4.0);
   float thin = clamp(hn * 0.85, 0.0, 1.0);
-  col += uHot * back * thin * uSSS * (0.55 + uHeat * 0.6);
+  col += uHot * back * thin * uSSS * (0.32 + uHeat * 0.34);
 
   // ---- foam --------------------------------------------------------------
+  // Foam is capped short of erasing the water underneath it. At 0.88 a busy,
+  // percussive track foamed hard enough that its colour disappeared exactly
+  // when the song was at its biggest — so the calmer a record was, the more of
+  // its identity survived, which is backwards. Whitewater is white, but it is
+  // thin, and you can still see the sea through it.
   float foam = clamp(vFoam * uFoamAmt, 0.0, 1.0);
-  col = mix(col, uFoamC, foam * 0.88);
+  col = mix(col, uFoamC, foam * 0.72);
 
   float edgeFade = 1.0 - smoothstep(uRadius * 0.60, uRadius * 0.99, vR);
   float a = uOpacity * edgeFade * (0.16 + crest * 0.74 + fres * 0.26);

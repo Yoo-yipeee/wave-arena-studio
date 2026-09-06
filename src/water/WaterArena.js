@@ -366,7 +366,10 @@ export class WaterArena {
         // colour at all, which costs exactly the per-song identity the rest of
         // this file works to establish.
         mat.uniforms.uFoamAmt.value = Math.min(1.05, 0.42 + mm.roughness * 0.6 + perf.intensity * 0.28);
-        mat.uniforms.uSSS.value = 0.55 + mm.glassiness * 0.7;
+        // Glassy water scatters more, but at 0.55+0.7 the glassiest records
+        // reached 1.12 and blew out hardest — the calmest songs were the
+        // brightest, which is backwards.
+        mat.uniforms.uSSS.value = 0.30 + mm.glassiness * 0.40;
       }
     }
 
