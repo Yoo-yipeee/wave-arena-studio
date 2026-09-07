@@ -388,11 +388,28 @@ export class QualityGovernor {
  * would override it. `focusY` tells the DOF pass where the water sits in frame
  * for that angle.
  */
+/**
+ * Kept deliberately narrow, and held for a long time.
+ *
+ * These used to span 0.66 to 1.14 in distance and 0.30 to 3.10 in height — a
+ * ten-fold swing, with an overhead shot that looked down on the arena from
+ * three times the normal height — and they changed every five to nine seconds.
+ * The result was that the water never appeared to be the same size twice: you
+ * could not settle into it, because the moment your eye adjusted to a framing
+ * it was replaced. A viewer reads that as the picture being unstable, not as
+ * the show being dynamic.
+ *
+ * A shot should be a lean on the same view, not a different view. The range is
+ * now about 1.3-fold in distance and 3-fold in height, holds are roughly
+ * doubled, and the overhead shot is gone from the routine vocabulary — it
+ * remains the single most disorienting cut available and it earns its place
+ * only when the arena is genuinely flat enough to show an interference pattern.
+ */
 const SHOTS = {
-  wide:     { distMul: 1.14, heightMul: 1.15, fovAdd: -2, focusY: 0.55, hold: 9 },
-  low:      { distMul: 0.80, heightMul: 0.30, fovAdd: 7,  focusY: 0.46, hold: 6 },
-  overhead: { distMul: 0.72, heightMul: 3.10, fovAdd: 2,  focusY: 0.50, hold: 7 },
-  close:    { distMul: 0.66, heightMul: 0.72, fovAdd: 9,  focusY: 0.50, hold: 5 },
+  wide:     { distMul: 1.10, heightMul: 1.14, fovAdd: -2, focusY: 0.55, hold: 17 },
+  low:      { distMul: 0.90, heightMul: 0.52, fovAdd: 4,  focusY: 0.46, hold: 13 },
+  close:    { distMul: 0.84, heightMul: 0.86, fovAdd: 5,  focusY: 0.50, hold: 12 },
+  overhead: { distMul: 0.86, heightMul: 1.80, fovAdd: 2,  focusY: 0.50, hold: 14 },
 };
 
 /**
@@ -439,24 +456,45 @@ export class CinematicCamera {
     this._cutFlash = 1;
     // A cut is instantaneous: jump the rig rather than easing, or it reads as
     // a swoop, which is the opposite of what a cut is for.
-    this.az += 1.9 + Math.random() * 2.2;
+    //
+    // The golden angle, rather than a random jump. Successive cuts land as far
+    // from each other as it is possible to arrange, so the show keeps finding
+    // genuinely new views of the arena — and it does so identically on every
+    // play, which a random jump could not promise.
+    this.az += 2.39996;
     this._snap = true;
     return true;
   }
 
-  /** Pick a shot appropriate to what just happened. */
+  /**
+   * Pick a shot appropriate to what just happened.
+   *
+   * Nothing here is random any more, and that is the point. Three of these
+   * branches used to toss a coin, so the same drop in the same song could cut
+   * low or close on different plays, and the camera's behaviour carried no
+   * information about the music. To a viewer that is indistinguishable from the
+   * camera moving for no reason — which is exactly what it was doing.
+   *
+   * Every branch now follows from what the music is doing, so a drop always
+   * gets the low angle where the water towers over the lens, a breakdown always
+   * opens out, and the same song always films the same way.
+   */
   cutFor(evType, section) {
     if (!this.cuts) return false;
-    if (evType === 'drop') return this.cut(Math.random() < 0.62 ? 'low' : 'close', true);
-    if (evType === 'settle') return this.cut('overhead');
-    if (evType === 'surge') return this.cut(Math.random() < 0.5 ? 'close' : 'wide');
+    // A drop is the water rearing up. The low angle is the shot that shows it,
+    // every time — there is no second-best option worth tossing a coin over.
+    if (evType === 'drop') return this.cut('low', true);
     // Overhead is for showing the interference pattern when there IS one. On
     // near-flat water it renders a disc of concentric rings seen from above,
     // which reads as a radar screen rather than a pond — that is exactly what
     // the quiet opening of a qawwali looked like. Quiet sections take the wide
     // shot instead, where even a small swell is seen edge-on against a horizon.
+    if (evType === 'settle') {
+      return this.cut(section === 'QUIET' || section === 'STILL' ? 'wide' : 'overhead');
+    }
+    if (evType === 'surge') return this.cut('close');
     if (section === 'QUIET' || section === 'STILL') return this.cut('wide');
-    return this.cut(Math.random() < 0.5 ? 'wide' : 'low');
+    return this.cut('wide');
   }
 
   /** Short cinematic shove — used on drops and section changes. */
@@ -469,8 +507,13 @@ export class CinematicCamera {
     this._t += dt;
     const t = this._t;
 
-    // slow orbit — faster when the arena is energetic, never fast enough to notice
-    this.az += dt * (0.026 + perf.intensity * 0.05);
+    // Slow orbit, and nearly stationary when the music is calm.
+    //
+    // A constant drift is motion the song did not ask for, and over a quiet
+    // three-minute track it is the largest thing moving on screen. Weighting it
+    // almost entirely on intensity means the arena holds still to be looked at
+    // when the music is still, and starts to turn when the music does.
+    this.az += dt * (0.008 + perf.intensity * 0.058);
 
     this.push *= Math.exp(-dtSmooth * 1.35);
     this.shake *= Math.exp(-dtSmooth * 2.2);
@@ -498,9 +541,14 @@ export class CinematicCamera {
     this.height += (wantHeight - this.height) * k;
     this.fov += (perf.fov + shot.fovAdd - this.fov) * (this._snap ? 1 : 1 - Math.exp(-dtSmooth * 2.4));
 
-    // handheld micro-motion, layered so it never reads as a loop
-    const hx = Math.sin(t * 0.37) * 0.28 + Math.sin(t * 0.91 + 1.3) * 0.14;
-    const hy = Math.sin(t * 0.29 + 2.1) * 0.22 + Math.sin(t * 0.73) * 0.10;
+    // Handheld micro-motion, layered so it never reads as a loop — and scaled
+    // by how energetic the arena is, because a hand shakes when something is
+    // happening and rests when nothing is. Held at a constant amplitude it was
+    // the one thing on screen that kept moving through the quietest passage of
+    // every song, which is precisely where stillness is the effect.
+    const life = 0.30 + perf.intensity * 0.95;
+    const hx = (Math.sin(t * 0.37) * 0.28 + Math.sin(t * 0.91 + 1.3) * 0.14) * life;
+    const hy = (Math.sin(t * 0.29 + 2.1) * 0.22 + Math.sin(t * 0.73) * 0.10) * life;
 
     // beat-locked shake, strongest during drops
     const s = this.shake * (0.5 + perf.intensity);

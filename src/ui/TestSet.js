@@ -76,8 +76,22 @@ const SONGS = [
  * when they returned. Every id below is the official upload (label or artist
  * channel), checked against oEmbed so a dead one cannot ship.
  */
+/**
+ * No `autoplay=1`.
+ *
+ * It was there to save the viewer a click and it never once worked: the
+ * parameter is only honoured on /embed/ URLs, and a normal /watch page ignores
+ * it outright. So the song opened, sat on its poster frame, and nothing
+ * happened — and because the panel had already moved on to "now playing it in
+ * the other tab?", the whole flow appeared broken at exactly the point someone
+ * is deciding whether this thing works.
+ *
+ * A parameter that promises something the page will not do is worse than no
+ * parameter, because it moves the failure somewhere the user cannot see it.
+ * Pressing play is one click; being told to press play is honest.
+ */
 const watchUrl = (s) =>
-  s.v ? 'https://www.youtube.com/watch?v=' + s.v + '&autoplay=1'
+  s.v ? 'https://www.youtube.com/watch?v=' + s.v
       : 'https://www.youtube.com/results?search_query=' + encodeURIComponent(s.a + ' ' + s.t);
 
 /**
@@ -144,6 +158,23 @@ export class TestSet {
     wrap.querySelector('#tsPickTitle').textContent = title || 'that song';
     this.el.querySelector('.ts-inner').scrollTop = 0;
     wrap.scrollIntoView({ block: 'start', behavior: 'smooth' });
+
+    // Step two happens after a round trip through another tab, and the panel
+    // was armed before the viewer left — so by the time they come back it has
+    // been sitting there, unremarked, for however long the intro ran. Coming
+    // back IS the moment it becomes relevant, so it announces itself then:
+    // scrolled to, and briefly highlighted so the eye lands on it.
+    if (!this._returnHook) {
+      this._returnHook = () => {
+        const w = this.el.querySelector('#tsPick');
+        if (document.hidden || !w || w.hidden) return;
+        w.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        w.classList.remove('back');
+        void w.offsetWidth;                     // restart the animation
+        w.classList.add('back');
+      };
+      document.addEventListener('visibilitychange', this._returnHook);
+    }
   }
 
   disarmTabPick() {
@@ -333,9 +364,14 @@ export class TestSet {
         </div>
         <div id="tsPick" hidden>
           <div class="ts-pick">
-            <div class="ts-pick-h">NOW PLAYING IT IN THE OTHER TAB?</div>
-            <div class="ts-pick-s">Start <b id="tsPickTitle"></b> over there, then come
-              back and pick that tab. Tick <b>share tab audio</b> in the box Chrome shows.</div>
+            <div class="ts-pick-h"><b id="tsPickTitle"></b> IS OPEN IN THE OTHER TAB</div>
+            <div class="ts-pick-s">
+              <span class="ts-step"><i>1</i> Press play over there — YouTube will not
+                start on its own.</span>
+              <span class="ts-step"><i>2</i> Come back to this tab.</span>
+              <span class="ts-step"><i>3</i> Hit the button, choose that tab, and tick
+                <b>Also share tab audio</b> in the box Chrome shows.</span>
+            </div>
             <button id="tsPickBtn">PICK THE TAB</button>
           </div>
         </div>

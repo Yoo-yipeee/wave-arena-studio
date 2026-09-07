@@ -558,8 +558,22 @@ export class SongIdentity {
    */
   get swellSeconds() {
     const c = this.tempoConfidence;
-    const fromTempo = (60 / (this.bpmOffline || 100)) * 2;
-    const fromTimbre = 2.60 - this.arousalTimbre * 1.70;   // calm 2.6s .. driving 0.9s
+    // ONE BAR, not two beats.
+    //
+    // Two beats is defensible on paper and wrong in the room: at 120 BPM it is
+    // a swell every second, and a 40 m arena crossed by a full wave every
+    // second does not read as water at all — it reads as agitation, and it is
+    // tiring to watch for the length of a song. Real swell is slow; what is
+    // quick on open water is the small chop riding on top of it.
+    //
+    // A bar is also the truer musical unit. People feel bars, not beats: a
+    // phrase turns over on the bar line, and water that turns over with it is
+    // synchronised in the way that is actually perceptible. Nothing is lost at
+    // the fast end, because omega = sqrt(g*k) in the shader means the small
+    // waves still ride at their own much quicker rate — the surface stays
+    // lively while the swell underneath it becomes stately.
+    const fromTempo = (60 / (this.bpmOffline || 100)) * 4;
+    const fromTimbre = 4.40 - this.arousalTimbre * 2.60;   // calm 4.4s .. driving 1.8s
     let t = fromTempo * c + fromTimbre * (1 - c);
 
     // Guardrail, and the reason arousalTimbre exists separately.
@@ -576,12 +590,12 @@ export class SongIdentity {
     // sameness for another — the point is to catch the ballad that
     // autocorrelated fast, not to slow everything down.
     const ta = this.arousalTimbre;
-    if (ta < 0.45) t = Math.max(t, 1.05 + (0.45 - ta) * 2.4);
+    if (ta < 0.45) t = Math.max(t, 2.10 + (0.45 - ta) * 4.8);
     // A tighter range than before. Tempo is wrong often enough that its errors
     // must not be able to produce water nobody would call watery: a folk dance
     // track read 50% fast and got a 0.71s swell, quicker than the rock single,
     // which is not a reading of the music, it is a reading of the mistake.
-    return Math.max(0.85, Math.min(2.35, t));
+    return Math.max(1.70, Math.min(4.70, t));
   }
 
   /**

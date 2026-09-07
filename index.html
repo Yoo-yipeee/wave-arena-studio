@@ -435,6 +435,21 @@
     color:rgba(233,247,255,.5);
   }
   .ts-pick-s b{color:rgba(233,247,255,.88);font-weight:400}
+  .ts-step{display:flex;gap:9px;align-items:baseline}
+  .ts-step i{
+    flex:0 0 auto;font-style:normal;font-size:8px;letter-spacing:0;
+    width:15px;height:15px;line-height:14px;text-align:center;border-radius:50%;
+    color:#cdefff;border:1px solid rgba(140,235,255,.45);
+  }
+  /* Coming back from the other tab is the moment step three starts to matter,
+     so the panel says so then, rather than having already said it while the
+     viewer was somewhere else. */
+  #tsPick.back .ts-pick{animation:tsBack 1.5s ease-out}
+  @keyframes tsBack{
+    0%,100%{box-shadow:0 0 34px rgba(60,180,255,.14);border-color:rgba(140,235,255,.45)}
+    18%{box-shadow:0 0 46px rgba(120,215,255,.5);border-color:rgba(190,245,255,.95)}
+  }
+  @media (prefers-reduced-motion:reduce){#tsPick.back .ts-pick{animation:none}}
   .ts-pick button{
     margin-top:14px;font-family:inherit;font-size:9px;letter-spacing:.3em;
     text-indent:.3em;padding:13px 26px;cursor:pointer;color:#fff;
