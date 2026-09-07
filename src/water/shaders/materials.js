@@ -43,10 +43,34 @@ void main() {
 }
 `;
 
+/**
+ * Sampling a five-stop gradient without dynamic indexing.
+ *
+ * GLSL ES 1.0 will not let a fragment shader index a uniform array with a
+ * computed index, so the ramp is walked with four successive mixes whose
+ * weights clamp to 0 or 1 outside their own segment. At t = 0.5 the second mix
+ * is partway and the rest are pinned, which is exactly a piecewise-linear
+ * interpolation — and every index is a constant.
+ */
+const RAMP_GLSL = /* glsl */`
+uniform vec3 uRamp[5];
+vec3 rampAt(float t) {
+  float x = clamp(t, 0.0, 1.0) * 4.0;
+  vec3 c = uRamp[0];
+  c = mix(c, uRamp[1], clamp(x,       0.0, 1.0));
+  c = mix(c, uRamp[2], clamp(x - 1.0, 0.0, 1.0));
+  c = mix(c, uRamp[3], clamp(x - 2.0, 0.0, 1.0));
+  c = mix(c, uRamp[4], clamp(x - 3.0, 0.0, 1.0));
+  return c;
+}
+`;
+
 export const SURFACE_FRAG = /* glsl */`
 precision highp float;
 uniform vec3  uDeep, uMid, uHot;
 uniform float uOpacity, uHeat, uReflect, uRadius, uAwake, uHeightRef, uGloss;
+uniform float uLevel;
+` + RAMP_GLSL + /* glsl */`
 uniform vec3  uFoamC;
 uniform float uFoamAmt, uSSS;
 varying float vH;
@@ -76,9 +100,19 @@ void main() {
   float crest = smoothstep(0.12, 1.05, hn);
   float deepness = smoothstep(0.35, -0.6, hn);
 
-  vec3 col = mix(uDeep, uMid, clamp(hn * 0.70 + 0.16, 0.0, 1.0)) * 0.62;
-  col = mix(col, uHot, crest * crest * (0.20 + uHeat * 0.42));
-  col += uMid * fres * 0.34;
+  // Where this point sits on the song's gradient.
+  //
+  // Height decides most of it, so a wave travels through the ramp as it rises
+  // — which is what makes the gradient read as depth rather than as a tint.
+  // The song's own level slides the WHOLE surface up the ramp on top of that,
+  // so a chorus is not merely taller than a verse, it is a visibly hotter
+  // colour, and the high and low points of the track can be read at a glance
+  // from a still frame. That is the cheapest structural cue available and the
+  // surface was not using it at all.
+  float g = clamp(hn * 0.50 + 0.12 + uLevel * 0.20, 0.0, 1.0);
+  vec3 col = rampAt(g) * 0.86;
+  col = mix(col, rampAt(1.0), crest * crest * (0.14 + uHeat * 0.26));
+  col += rampAt(g) * fres * 0.30;
   // The specular used to be a hardcoded cold blue-white. That is defensible
   // when every song is blue and wrong the moment they are not: on a gold track
   // the brightest part of every crest was lit in the one colour the palette
@@ -91,9 +125,11 @@ void main() {
   // crest clipped and the frame went cream. They are scaled to land near 1.2 at
   // their joint peak, which leaves ACES something to roll off instead of a
   // value it can only clamp.
-  vec3 specTint = mix(vec3(0.82, 0.90, 1.0), uHot, 0.5);
-  col += specTint * spe * (0.16 + uHeat * 0.26);
-  col += uMid * diff * 0.06;
+  // Two thirds of the song's crest colour, not half: the whiter this is, the
+  // more the brightest pixels of every track look the same as each other.
+  vec3 specTint = mix(vec3(0.82, 0.90, 1.0), rampAt(1.0), 0.66);
+  col += specTint * spe * (0.14 + uHeat * 0.22);
+  col += rampAt(g) * diff * 0.06;
   col *= 1.0 - deepness * 0.62;
 
   // ---- subsurface scattering ------------------------------------------
@@ -104,7 +140,7 @@ void main() {
   vec3 sssDir = normalize(-L1 + N * 0.55);
   float back = pow(clamp(dot(V, sssDir), 0.0, 1.0), 4.0);
   float thin = clamp(hn * 0.85, 0.0, 1.0);
-  col += uHot * back * thin * uSSS * (0.32 + uHeat * 0.34);
+  col += rampAt(0.82) * back * thin * uSSS * (0.30 + uHeat * 0.30);
 
   // ---- foam --------------------------------------------------------------
   // Foam is capped short of erasing the water underneath it. At 0.88 a busy,
@@ -112,8 +148,13 @@ void main() {
   // when the song was at its biggest — so the calmer a record was, the more of
   // its identity survived, which is backwards. Whitewater is white, but it is
   // thin, and you can still see the sea through it.
+  // 0.52, down from 0.72. Foam is the last of the four things that all peak on
+  // the same pixel — ramp crest, specular, subsurface scatter and this — and it
+  // was the one doing most of the bleaching, because it is a MIX rather than an
+  // addition: it does not brighten the water, it replaces it. Whitewater is
+  // thin, and you should still be able to read the song's colour through it.
   float foam = clamp(vFoam * uFoamAmt, 0.0, 1.0);
-  col = mix(col, uFoamC, foam * 0.72);
+  col = mix(col, uFoamC, foam * 0.52);
 
   float edgeFade = 1.0 - smoothstep(uRadius * 0.60, uRadius * 0.99, vR);
   float a = uOpacity * edgeFade * (0.16 + crest * 0.74 + fres * 0.26);
@@ -156,6 +197,8 @@ export const LINE_FRAG = /* glsl */`
 precision highp float;
 uniform vec3  uMid, uHot;
 uniform float uOpacity, uHeat, uReflect, uRadius, uAwake, uHeightRef;
+uniform float uLevel;
+` + RAMP_GLSL + /* glsl */`
 varying float vH;
 varying float vR;
 varying float vSlope;
@@ -166,7 +209,19 @@ void main() {
   // steep flanks catch the light — this is what draws the "spikes"
   float rim   = clamp(vSlope * 3.2 / uHeightRef, 0.0, 1.4);
 
-  vec3 col = mix(uMid * 1.05, uHot, clamp(crest * (0.45 + uHeat * 0.7) + rim * 0.25, 0.0, 1.0));
+  // The wireframe rides the same gradient as the body beneath it.
+  //
+  // It used to run from the mid colour to the hot one and reach the hot end on
+  // every crest — and because these lines are drawn ADDITIVELY over the
+  // surface, that put the palest colour in the palette on top of the brightest
+  // part of the water, twice. The lines are most of what you actually see, so
+  // they were most of the whiteness.
+  float g = clamp(hn * 0.44 + 0.16 + uLevel * 0.18
+                  + rim * 0.14 + crest * uHeat * 0.18, 0.0, 1.0);
+  // 0.88, not 1.05. These lines are drawn additively OVER the body, which is
+  // already showing the same gradient at the same point — so anything above
+  // parity here is the crest colour applied twice.
+  vec3 col = rampAt(g) * 0.88;
   float edgeFade = 1.0 - smoothstep(uRadius * 0.52, uRadius * 0.98, vR);
   float a = uOpacity * edgeFade * (0.22 + crest * 0.85 + rim * 0.32);
   if (uReflect > 0.5) a *= 0.34 * (1.0 - smoothstep(0.0, uHeightRef * 2.2, abs(vH)));

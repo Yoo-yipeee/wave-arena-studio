@@ -47,6 +47,8 @@ export class WaterArena {
     this._tone = PALETTE.mid.clone();
     this._toneTarget = PALETTE.mid.clone();
     this._foamC = new THREE.Color(0xdff2ff);
+    // Scratch colours for easing the gradient, so the frame loop allocates none.
+    this._rampTmp = [0, 0, 0, 0, 0].map(() => new THREE.Color());
     this.identity = null;
     this._pal = null;
 
@@ -65,10 +67,19 @@ export class WaterArena {
     lineGeo.boundingSphere = bodyGeo.boundingSphere;
 
     // ---- materials ----------------------------------------------------------
+    // The gradient the surface and the lines are both coloured from. Five stops
+    // so a wave travels through real hue as it rises, rather than one colour
+    // getting lighter until it stops being a colour.
+    const startRamp = () => [
+      PALETTE.deep.clone(), PALETTE.deep.clone(), PALETTE.mid.clone(),
+      PALETTE.hot.clone(), PALETTE.hot.clone(),
+    ];
     const surfaceUniforms = (reflect) => Object.assign({}, this.U, {
       uDeep: { value: PALETTE.deep.clone() },
       uMid: { value: PALETTE.mid.clone() },
       uHot: { value: PALETTE.hot.clone() },
+      uRamp: { value: startRamp() },
+      uLevel: { value: 0 },
       uOpacity: { value: 0.9 },
       uHeat: { value: 0 },
       uGloss: { value: 0.6 },
@@ -80,6 +91,8 @@ export class WaterArena {
     const lineUniforms = (reflect) => Object.assign({}, this.U, {
       uMid: { value: PALETTE.mid.clone() },
       uHot: { value: PALETTE.hot.clone() },
+      uRamp: { value: startRamp() },
+      uLevel: { value: 0 },
       uOpacity: { value: 0.5 },
       uHeat: { value: 0 },
       uReflect: { value: reflect },
@@ -347,6 +360,22 @@ export class WaterArena {
       for (const mat of [this.bodyMat, this.bodyReflMat, this.lineMat, this.lineReflMat]) {
         mat.uniforms.uHot.value.setRGB(p2.hot.r, p2.hot.g, p2.hot.b);
       }
+      // The gradient itself, eased rather than snapped: identity keeps refining
+      // its reading of the song for the first half-minute, and a palette that
+      // jumped every time it did would read as the picture glitching.
+      const rp = this.identity.ramp();
+      for (const mat of [this.bodyMat, this.bodyReflMat, this.lineMat, this.lineReflMat]) {
+        const arr = mat.uniforms.uRamp.value;
+        for (let i = 0; i < 5; i++) {
+          arr[i].lerp(this._rampTmp[i].setRGB(rp[i].r, rp[i].g, rp[i].b),
+                      1 - Math.exp(-dt * 0.7));
+        }
+        // How activated the song is right now, so the whole surface slides up
+        // the gradient through a chorus and back down through a verse.
+        const u = mat.uniforms.uLevel;
+        u.value += (perf.level - u.value) * (1 - Math.exp(-dt * 1.1));
+      }
+
       this.backdropMat.uniforms.uGlow.value.setRGB(p2.glow.r, p2.glow.g, p2.glow.b);
       this.mistMat.uniforms.uHotC.value.setRGB(p2.hot.r, p2.hot.g, p2.hot.b);
       this.mistMat.uniforms.uMidC.value.setRGB(p2.mid.r, p2.mid.g, p2.mid.b);
@@ -379,10 +408,15 @@ export class WaterArena {
       // is white, but pushing it 45% of the way to pure white meant the
       // brightest, most eye-catching part of the frame was identical on every
       // track, and on a warm palette it dragged the whole surface grey.
+      // Taken from the crest end of the gradient and lifted only a little.
+      // Pulling it 26% toward pure white was enough, on top of everything else
+      // that peaks in the same place, to make the brightest part of the frame
+      // near-identical on every track.
+      const fc = rp[4];
       this._foamC.setRGB(
-        Math.min(1, p3.hot.r * 0.74 + 0.26),
-        Math.min(1, p3.hot.g * 0.74 + 0.26),
-        Math.min(1, p3.hot.b * 0.74 + 0.26),
+        Math.min(1, fc.r * 0.90 + 0.10),
+        Math.min(1, fc.g * 0.90 + 0.10),
+        Math.min(1, fc.b * 0.90 + 0.10),
       );
       for (const mat of [this.bodyMat, this.bodyReflMat]) {
         mat.uniforms.uFoamC.value.copy(this._foamC);

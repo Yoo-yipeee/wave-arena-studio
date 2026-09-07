@@ -714,6 +714,17 @@ requestAnimationFrame((t) => { last = t; frame(t); });
 // Expose the pipeline for tinkering from the console.
 window.WAVE = {
   engine, arena, choreo, stage, camera, ui, touch, recorder, settings, governor, THREE,
+  // Load any URL the server can reach, so the arena can be driven over real
+  // records rather than only over the demo tunes. test-audio/ is gitignored and
+  // never ships; this is a testing affordance, not a feature.
+  load: (url, title) => {
+    engine.ensureContext();
+    return beginTrack(async () => {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(url + ' -> ' + res.status);
+      await engine.loadArrayBuffer(await res.arrayBuffer(), title || url);
+    }, 'LOADING ' + String(title || '').toUpperCase().slice(0, 34));
+  },
   get perf() { return governor.describe(); },
   get music() { return analyser?.state; },
   get analyser() { return analyser; },

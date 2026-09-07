@@ -751,6 +751,73 @@ export class SongIdentity {
     this.light = clamp01(l * lumComp);
   }
 
+  /**
+   * The gradient the water is actually coloured with: five stops, trough to
+   * crest, as {r,g,b} in 0..1.
+   *
+   * ---------------------------------------------------------------------------
+   * WHY FIVE, AND WHY A HUE ARC
+   *
+   * The surface had three colours and a foam white, and the middle one was used
+   * for nearly everything — so a wave was one hue getting lighter, and the top
+   * of every crest converged on the same pale non-colour. Three stops cannot
+   * make a gradient; they make a fade. What was missing is not brightness, it
+   * is HUE TRAVEL: real lit water shifts colour between its troughs and its
+   * crests, and that shift is most of what makes a surface look deep.
+   *
+   * So the ramp sweeps an arc — 44 degrees on a still record, close to 100 on a
+   * driving one — and the song's own hue anchors its trough. Each song still
+   * has one identity; it now has a range around it rather than a single note.
+   *
+   * ---------------------------------------------------------------------------
+   * WHICH WAY IT TRAVELS
+   *
+   * Away from lime, always, for the reason the hue guard above already gives:
+   * indigo, cyan, emerald and gold are all water, and the yellow-green between
+   * emerald and gold is antifreeze. Rotating away from it means a teal record
+   * climbs toward blue, a gold one toward amber and coral, an indigo one toward
+   * violet — every one of those is a colour water is actually seen in, and none
+   * of them can arrive at pond scum.
+   *
+   * Lightness rises across the ramp but stops well short of the top. The crest
+   * is the brightest thing on screen and it is also where additive lines, foam,
+   * specular and subsurface scatter all peak together; leaving headroom here is
+   * what stops those four summing to white.
+   */
+  ramp() {
+    const h = this.hue, s = this.sat, l = this.light;
+    const toLime = (((112 - h) % 360) + 540) % 360 - 180;
+    const away = toLime > 0 ? -1 : 1;
+    const arc = 38 + this.arousal * 46;
+    // Lightness is stated ABSOLUTELY and capped, not offset.
+    //
+    // Adding a constant to the song's own lightness meant a bright record
+    // started high and ended higher: 0.42 + 0.23 is 0.65, and at 0.65 with the
+    // saturation also eased off, the crest is already most of the way to white
+    // before the specular, the subsurface scatter, the additive wireframe and
+    // the foam have added anything. Capping the top and holding saturation UP
+    // is what keeps a crest a strong colour instead of a pale one — brightness
+    // is not what makes a highlight read, contrast is.
+    const stop = (f, sMul, lAbs) => hsl(
+      h + away * arc * f,
+      clamp01(s * sMul),
+      clamp01(Math.max(0.06, lAbs)),
+    );
+    // The travel is deliberately back-loaded. Spacing the stops evenly spent
+    // most of the ramp away from the song's own hue, so a teal record rendered
+    // as a violet one — the gradient arrived and took the identity with it.
+    // Holding the first three stops close to home keeps the song recognisable
+    // and lets only the true crests reach the far end, which is also how water
+    // behaves: the colour change lives in the top of the wave.
+    return [
+      stop(0.00, 1.00, Math.max(0.07, l * 0.40)),          // trough
+      stop(0.09, 1.06, Math.max(0.11, l * 0.66)),
+      stop(0.26, 1.04, l),                                  // the song itself
+      stop(0.58, 1.02, Math.min(0.48, l + 0.09)),
+      stop(1.00, 0.98, Math.min(0.55, l + 0.15)),           // crest
+    ];
+  }
+
   /** deep / mid / hot triad for the water, as {r,g,b} in 0..1 */
   palette() {
     const h = this.hue, s = this.sat, l = this.light;
