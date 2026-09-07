@@ -49,25 +49,34 @@ const DEMOS = [
 
 /** Not shipped. Links out; PLAY FROM A TAB carries them in. */
 const SONGS = [
-  { t: 'Bohemian Rhapsody',  a: 'Queen',              mood: 'SERENE',   key: 'D#',  bpm: '',     c: 'GOLD' },
-  { t: 'Girls Like You',     a: 'Maroon 5',           mood: 'SERENE',   key: 'C',   bpm: '58?',  c: 'GOLD' },
-  { t: 'Wake Me Up',         a: 'Avicii',             mood: 'WARM',     key: 'D',   bpm: '115',  c: 'CHARTREUSE' },
-  { t: 'Apna Time Aayega',   a: 'DIVINE · Gully Boy', mood: 'EUPHORIC', key: 'F#',  bpm: '115',  c: 'MINT' },
-  { t: 'Gallan Goodiyaan',   a: 'Dil Dhadakne Do',    mood: 'SERENE',   key: 'D',   bpm: '60',   c: 'EMERALD' },
-  { t: 'Ghoomar',            a: 'Padmaavat',          mood: 'EUPHORIC', key: 'D?',  bpm: '169',  c: 'TURQUOISE' },
-  { t: 'Kun Faya Kun',       a: 'A. R. Rahman',       mood: 'POISED',   key: 'C#?', bpm: '88?',  c: 'TURQUOISE' },
-  { t: 'Believer',           a: 'Imagine Dragons',    mood: 'DRIVING',  key: '',    bpm: '125',  c: 'CYAN' },
-  { t: 'Someone Like You',   a: 'Adele',              mood: 'STILL',    key: '',    bpm: '67',   c: 'CYAN' },
-  { t: 'Tum Hi Ho',          a: 'Arijit Singh',       mood: 'DRIVING',  key: 'Fm?', bpm: '188?', c: 'CYAN' },
-  { t: "Don't Stop Me Now",  a: 'Queen',              mood: 'STILL',    key: 'Dm',  bpm: '78',   c: 'AZURE' },
-  { t: 'Blinding Lights',    a: 'The Weeknd',         mood: 'DESOLATE', key: 'Cm',  bpm: '85',   c: 'BLUE' },
-  { t: 'HUMBLE.',            a: 'Kendrick Lamar',     mood: 'BROODING', key: 'Cm',  bpm: '75',   c: 'INDIGO' },
-  { t: 'Millionaire',        a: 'Yo Yo Honey Singh',  mood: 'BROODING', key: 'Dm',  bpm: '96',   c: 'INDIGO' },
+  { t: 'Bohemian Rhapsody', v: 'fJ9rUzIMcZQ',  a: 'Queen',              mood: 'SERENE',   key: 'D#',  bpm: '',     c: 'GOLD' },
+  { t: 'Girls Like You', v: 'aJOTlE1K90k',     a: 'Maroon 5',           mood: 'SERENE',   key: 'C',   bpm: '58?',  c: 'GOLD' },
+  { t: 'Wake Me Up', v: 'IcrbM1l_BoI',         a: 'Avicii',             mood: 'WARM',     key: 'D',   bpm: '115',  c: 'CHARTREUSE' },
+  { t: 'Apna Time Aayega', v: 'jFGKJBPFdUA',   a: 'DIVINE · Gully Boy', mood: 'EUPHORIC', key: 'F#',  bpm: '115',  c: 'MINT' },
+  { t: 'Gallan Goodiyaan', v: 'jCEdTq3j-0U',   a: 'Dil Dhadakne Do',    mood: 'SERENE',   key: 'D',   bpm: '60',   c: 'EMERALD' },
+  { t: 'Ghoomar', v: 'CU1tFtk_NFY',            a: 'Padmaavat',          mood: 'EUPHORIC', key: 'D?',  bpm: '169',  c: 'TURQUOISE' },
+  { t: 'Kun Faya Kun', v: 'T94PHkuydcw',       a: 'A. R. Rahman',       mood: 'POISED',   key: 'C#?', bpm: '88?',  c: 'TURQUOISE' },
+  { t: 'Believer', v: '7wtfhZwyrcc',           a: 'Imagine Dragons',    mood: 'DRIVING',  key: '',    bpm: '125',  c: 'CYAN' },
+  { t: 'Someone Like You', v: 'hLQl3WQQoQ0',   a: 'Adele',              mood: 'STILL',    key: '',    bpm: '67',   c: 'CYAN' },
+  { t: 'Tum Hi Ho', v: 'Umqb9KENgmk',          a: 'Arijit Singh',       mood: 'DRIVING',  key: 'Fm?', bpm: '188?', c: 'CYAN' },
+  { t: "Don't Stop Me Now", v: 'HgzGwKwLmgM',  a: 'Queen',              mood: 'STILL',    key: 'Dm',  bpm: '78',   c: 'AZURE' },
+  { t: 'Blinding Lights', v: '4NRXx6U8ABQ',    a: 'The Weeknd',         mood: 'DESOLATE', key: 'Cm',  bpm: '85',   c: 'BLUE' },
+  { t: 'HUMBLE.', v: 'tvTRZJ-4EyI',            a: 'Kendrick Lamar',     mood: 'BROODING', key: 'Cm',  bpm: '75',   c: 'INDIGO' },
+  { t: 'Millionaire', v: 'XO8wew38VM8',        a: 'Yo Yo Honey Singh',  mood: 'BROODING', key: 'Dm',  bpm: '96',   c: 'INDIGO' },
 ];
 
-/** A search, not a specific upload — links to one video rot, and often to a rip. */
-const searchUrl = (s) =>
-  'https://www.youtube.com/results?search_query=' + encodeURIComponent(s.a + ' ' + s.t);
+/**
+ * A real video, not a search page.
+ *
+ * These linked to `youtube.com/results?search_query=...` — which plays nothing.
+ * "Open the song, then come back and capture the tab" quietly asked the viewer
+ * to go and find the song themselves first, so of course nothing was playing
+ * when they returned. Every id below is the official upload (label or artist
+ * channel), checked against oEmbed so a dead one cannot ship.
+ */
+const watchUrl = (s) =>
+  s.v ? 'https://www.youtube.com/watch?v=' + s.v + '&autoplay=1'
+      : 'https://www.youtube.com/results?search_query=' + encodeURIComponent(s.a + ' ' + s.t);
 
 /**
  * The '?' marks a reading the analyser does not stand behind, and it has to
@@ -325,7 +334,7 @@ export class TestSet {
     for (const s of SONGS) {
       const a = document.createElement('a');
       a.className = 'ts-row';
-      a.href = searchUrl(s);
+      a.href = watchUrl(s);
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
       a.innerHTML =
