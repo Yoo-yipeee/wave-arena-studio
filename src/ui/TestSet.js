@@ -247,18 +247,21 @@ export class TestSet {
     }
 
     body.innerHTML = `
-      <div class="ts-note">Signed in as <b>${esc(state.email || '')}</b>. Pick an audio file —
-        it is analysed here first, so the library shows its reading like everything else.
-        <b>Only add music you have the right to share.</b></div>
+      <div class="ts-note">Signed in as <b>${esc(state.email || '')}</b>. Pick one file or
+        many — each is analysed here first, so the library shows its reading like
+        everything else. <b>Only add music you have the right to share.</b></div>
       <div class="ts-form">
-        <input type="file" id="tsFile" accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac" />
+        <input type="file" id="tsFile" multiple accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac" />
         <button id="tsOut">SIGN OUT</button>
       </div>
       <div class="ts-status" id="tsStatus"></div>`;
     body.querySelector('#tsFile').addEventListener('change', (e) => {
-      const f = e.target.files && e.target.files[0];
+      // Pick as many as you like. Adding a library one track at a time, waiting
+      // for each analysis and upload before choosing the next, is the kind of
+      // chore that stops a library ever being filled.
+      const files = e.target.files ? Array.from(e.target.files) : [];
       e.target.value = '';
-      if (f && this.onUpload) this.onUpload(f);
+      if (files.length && this.onUpload) this.onUpload(files);
     });
     body.querySelector('#tsOut').addEventListener('click', () => this.onSignOut && this.onSignOut());
   }

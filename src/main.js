@@ -167,35 +167,64 @@ if (new URLSearchParams(location.search).has('admin') || RETURNING_FROM_SIGN_IN)
    * picker shows for everything else — and so the curator sees what they are
    * about to publish before it goes up.
    */
-  testSet.onUpload = async (file) => {
-    try {
-      testSet.setStatus('READING ' + file.name.slice(0, 30).toUpperCase() + '…');
-      const ctx = engine.ensureContext();
-      const buf = await ctx.decodeAudioData(await file.arrayBuffer());
-      const env = computePeaks(buf);
-      const id = new SongIdentity(buf, env);
-      id.paletteMode = settings.get('palette');
-      id._recompute();
-      const card = id.card();
+  testSet.onUpload = async (files) => {
+    const queue = Array.isArray(files) ? files : [files];
+    const done = [], failed = [];
 
-      testSet.setStatus('UPLOADING ' + (file.size / 1048576).toFixed(1) + ' MB…');
-      await library.upload(file, slugify(file.name), {
-        title: file.name.replace(/\.[^.]+$/, '').slice(0, 120),
-        duration: buf.duration,
-        mood: card.mood,
-        key_name: card.key || null,
-        bpm: card.bpm || null,
-        colour: card.colour,
-        hue: card.hue,
-        key_sure: !!card.keySure,
-        bpm_sure: !!card.bpmSure,
-      });
-      testSet.setStatus('ADDED — ' + card.mood + ' · ' + card.colour, 'ok');
-      refreshLibrary();
-    } catch (err) {
-      testSet.setStatus(String(err.message || err).toUpperCase().slice(0, 120), 'bad');
+    // Sequential on purpose. Analysis decodes the whole file into memory and
+    // upload competes for the same connection, so running a dozen at once is a
+    // good way to make every one of them slower and some of them fail. One at a
+    // time, and one failure never takes the rest of the batch with it.
+    for (let i = 0; i < queue.length; i++) {
+      const file = queue[i];
+      const nth = queue.length > 1 ? '(' + (i + 1) + '/' + queue.length + ') ' : '';
+      const label = file.name.replace(/\.[^.]+$/, '').slice(0, 26).toUpperCase();
+      try {
+        testSet.setStatus(nth + 'READING ' + label + '…');
+        const ctx = engine.ensureContext();
+        const buf = await ctx.decodeAudioData(await file.arrayBuffer());
+        const env = computePeaks(buf);
+        const id = new SongIdentity(buf, env);
+        id.paletteMode = settings.get('palette');
+        id._recompute();
+        const card = id.card();
+
+        testSet.setStatus(nth + 'UPLOADING ' + label + ' · '
+          + (file.size / 1048576).toFixed(1) + ' MB…');
+        await library.upload(file, slugify(file.name), {
+          title: file.name.replace(/\.[^.]+$/, '').slice(0, 120),
+          duration: buf.duration,
+          mood: card.mood,
+          key_name: card.key || null,
+          bpm: card.bpm || null,
+          colour: card.colour,
+          hue: card.hue,
+          key_sure: !!card.keySure,
+          bpm_sure: !!card.bpmSure,
+        });
+        done.push(card.colour);
+        // Show it landing rather than making the whole batch finish first.
+        refreshLibrary();
+      } catch (err) {
+        failed.push(label + ': ' + String(err.message || err).slice(0, 60));
+        console.error('upload failed for', file.name, err);
+      }
     }
+
+    if (queue.length === 1) {
+      testSet.setStatus(failed.length ? failed[0].toUpperCase().slice(0, 130)
+        : 'ADDED — ' + done[0], failed.length ? 'bad' : 'ok');
+    } else {
+      // A batch has to report both halves: silently dropping the ones that
+      // failed is how a library ends up with holes nobody knows about.
+      testSet.setStatus(
+        ('ADDED ' + done.length + ' OF ' + queue.length
+          + (failed.length ? ' · FAILED: ' + failed.join(' | ') : '')).toUpperCase().slice(0, 220),
+        failed.length ? 'bad' : 'ok');
+    }
+    refreshLibrary();
   };
+
 }
 
 ui.on.record = () => {
