@@ -694,6 +694,22 @@ export class SongIdentity {
     const high = clamp01((V - 0.5) * 2);     // 1 at fully bright, 0 at neutral
     let hue = hueBase + A * (low * 48 - high * 24);
 
+    // ---- and arousal has to say something in the MIDDLE too ----------------
+    //
+    // The tilt above is zero at neutral valence by design, so that a middling
+    // song cannot be rotated into a colour it should not be. The cost only
+    // shows up when you look at a real set: across sixteen records, six sit
+    // between valence 0.44 and 0.65, and they were handed hues 174 to 206 —
+    // six different songs inside thirty degrees of cyan, with nothing to tell
+    // Believer from Someone Like You.
+    //
+    // Mid-valence is exactly where arousal is the most informative thing left,
+    // so it gets to move the hue there. Driving records run cooler toward
+    // turquoise, still ones settle back toward blue. Weighted to vanish at both
+    // ends, where the tilt above already owns the direction.
+    const mid = 1 - Math.abs(V - 0.5) * 2;
+    hue -= (A - 0.5) * 44 * mid;
+
     // Timbre separates two songs that share a quadrant.
     hue += (this.brightness - 0.5) * 20 + (this.width - 0.5) * 12;
 
@@ -728,8 +744,16 @@ export class SongIdentity {
     // are real lagoon colours and survive; everything between is pulled toward
     // neutral, so a song that has to cross reads as pale water rather than as
     // pond scum.
+    // Narrowed from 62 degrees to 40.
+    //
+    // At 62 the guard reached from 50 to 174, which is not the lime arc — it is
+    // most of the green range plus the bottom of the golds. Emerald at 156 was
+    // being docked a third of its saturation by the very same file that calls
+    // emerald "a real lagoon colour" two hundred lines further down, and Gallan
+    // Goodiyaan came out at chroma 0.43 because of it. The arc that genuinely
+    // has no water in it is narrow; the guard should be too.
     const lime = Math.abs(hue - 112);
-    if (lime < 62) chroma *= 1 - 0.78 * (1 - lime / 62);
+    if (lime < 40) chroma *= 1 - 0.72 * (1 - lime / 40);
 
     // ---- equal-looking, not equal-numbered ---------------------------------
     //
@@ -770,14 +794,30 @@ export class SongIdentity {
    * has one identity; it now has a range around it rather than a single note.
    *
    * ---------------------------------------------------------------------------
-   * WHICH WAY IT TRAVELS
+   * WHICH WAY IT TRAVELS — AND WHY "AWAY FROM LIME" WAS NOT ENOUGH
    *
-   * Away from lime, always, for the reason the hue guard above already gives:
-   * indigo, cyan, emerald and gold are all water, and the yellow-green between
-   * emerald and gold is antifreeze. Rotating away from it means a teal record
-   * climbs toward blue, a gold one toward amber and coral, an indigo one toward
-   * violet — every one of those is a colour water is actually seen in, and none
-   * of them can arrive at pond scum.
+   * The first version rotated away from lime, on the grounds that indigo, cyan,
+   * emerald and gold are all water and the yellow-green between emerald and
+   * gold is antifreeze. That rule is right about where NOT to go and says
+   * nothing useful about where to go — and because lime sits at 112, "away"
+   * points almost every water hue at the same place. Teal 177 ended at 261,
+   * indigo 258 at 342, gold 51 at 327. Three completely different songs, three
+   * violet crests. Every track came out purple, which is worse than every track
+   * coming out teal, because it looks deliberate.
+   *
+   * So the direction is now a property of the hue family, chosen from what
+   * light actually does to water of that colour:
+   *
+   *   gold / amber   troughs toward deep red, crests toward bright gold — fire
+   *   teal / cyan    troughs toward deep blue, crests toward bright aqua —
+   *                  which is exactly how shallow tropical water is lit
+   *   blue / indigo  troughs stay deep, crests open toward cyan — deep ocean
+   *   violet / pink  troughs toward deep violet, crests toward hot pink — neon
+   *   red / crimson  troughs toward magenta, crests toward orange — embers
+   *
+   * Note that the rotation REVERSES between families: a gold song's crest is a
+   * higher hue than its trough and a blue song's crest is a lower one. That is
+   * the whole point. A single global direction is what collapsed them together.
    *
    * Lightness rises across the ramp but stops well short of the top. The crest
    * is the brightest thing on screen and it is also where additive lines, foam,
@@ -786,9 +826,12 @@ export class SongIdentity {
    */
   ramp() {
     const h = this.hue, s = this.sat, l = this.light;
-    const toLime = (((112 - h) % 360) + 540) % 360 - 180;
-    const away = toLime > 0 ? -1 : 1;
-    const arc = 38 + this.arousal * 46;
+    const ends = rampEnds(h);
+    // Arousal decides how far the family's own range is actually used: a still
+    // record moves a little way along it, a driving one spans the lot.
+    const reach = 0.55 + this.arousal * 0.45;
+    const deepShift = ends.deep * reach;
+    const crestShift = ends.crest * reach;
     // Lightness is stated ABSOLUTELY and capped, not offset.
     //
     // Adding a constant to the song's own lightness meant a bright record
@@ -798,22 +841,33 @@ export class SongIdentity {
     // the foam have added anything. Capping the top and holding saturation UP
     // is what keeps a crest a strong colour instead of a pale one — brightness
     // is not what makes a highlight read, contrast is.
-    const stop = (f, sMul, lAbs) => hsl(
-      h + away * arc * f,
-      clamp01(s * sMul),
-      clamp01(Math.max(0.06, lAbs)),
-    );
-    // The travel is deliberately back-loaded. Spacing the stops evenly spent
-    // most of the ramp away from the song's own hue, so a teal record rendered
-    // as a violet one — the gradient arrived and took the identity with it.
-    // Holding the first three stops close to home keeps the song recognisable
-    // and lets only the true crests reach the far end, which is also how water
-    // behaves: the colour change lives in the top of the wave.
+    // `f` runs -1 (trough) .. 0 (the song's own hue) .. +1 (crest), so the
+    // identity sits in the middle of its own gradient rather than at one end.
+    const stop = (f, sMul, lAbs) => {
+      const hue = h + (f < 0 ? -f * deepShift : f * crestShift);
+      // The lime guard applies to every stop, not only to the song's base hue.
+      // Offsets added here were escaping it, which is how a gradient could pass
+      // through a colour the identity itself is forbidden to be.
+      const lime = Math.abs((((hue - 112) % 360) + 540) % 360 - 180);
+      const guard = lime < 38 ? 1 - 0.70 * (1 - lime / 38) : 1;
+      // And so does the luminance compensation, for the same reason it exists
+      // on the base hue: HSL lightness is not perceptual, and a saturated gold
+      // carries several times the luminance of a saturated blue at the same
+      // number. Capping every stop at the same value therefore blew out the
+      // warm records and only the warm records — Apna Time Aayega's crests went
+      // to cream while the blue tracks at identical settings still read as
+      // water. Each stop is pulled down toward the luminance a blue would have
+      // had, and only ever down.
+      const probe = hsl(hue, 1, 0.5);
+      const Y = 0.2126 * probe.r + 0.7152 * probe.g + 0.0722 * probe.b;
+      const comp = Math.min(1, Math.pow(0.42 / Math.max(0.08, Y), 0.32));
+      return hsl(hue, clamp01(s * sMul * guard), clamp01(Math.max(0.06, lAbs * comp)));
+    };
     return [
-      stop(0.00, 1.00, Math.max(0.07, l * 0.40)),          // trough
-      stop(0.09, 1.06, Math.max(0.11, l * 0.66)),
-      stop(0.26, 1.04, l),                                  // the song itself
-      stop(0.58, 1.02, Math.min(0.48, l + 0.09)),
+      stop(-1.00, 1.00, Math.max(0.07, l * 0.40)),          // trough
+      stop(-0.45, 1.06, Math.max(0.11, l * 0.66)),
+      stop(0.00, 1.04, l),                                  // the song itself
+      stop(0.52, 1.02, Math.min(0.48, l + 0.09)),
       stop(1.00, 0.98, Math.min(0.55, l + 0.15)),           // crest
     ];
   }
@@ -1023,22 +1077,34 @@ function pearson(a, b) {
  * property is the whole point: it makes a wrong midpoint impossible by
  * construction rather than by tuning.
  *
- * The lime crossing sits between 0.74 and 0.88 and is deliberately narrow.
- * An earlier layout put it at 0.84-0.90, which turned out to be exactly where a
- * confidently major song lands: a C-major acoustic cover came out at valence
- * 0.90 and rendered as muddy olive. That band is not a rare edge case, it is
- * where happy music lives, so the ramp now reaches amber well before it.
+ * WHERE THE LIME CROSSING GOES, MEASURED
+ *
+ * It was at 0.84-0.90, moved there because 0.84-0.90 was believed to be clear.
+ * It is not: run across the sixteen real records this project tests on, Apna
+ * Time Aayega lands at valence 0.85 and Wake Me Up at 0.87 — both squarely
+ * inside it. Both came out at hue 103-124 with the lime guard crushing their
+ * saturation to 0.22 and 0.29, so the two most triumphant tracks in the set
+ * rendered as the greyest, palest water of all sixteen. Exactly backwards.
+ *
+ * The crossing is now at 0.68-0.74, which is the one genuinely empty stretch in
+ * the measured distribution — Ghoomar sits at 0.65 and Gallan Goodiyaan at 0.78,
+ * with nothing between. Everything above it is warm, so the five records that
+ * read as joyful all come out amber or gold instead of one of them being olive.
+ *
+ * This is worth restating because the same mistake has now been made twice: the
+ * safe band cannot be reasoned about from the shape of the ramp. It has to be
+ * measured against real songs, because the only thing that matters is where
+ * music actually lands.
  */
 const HUE_RAMP = [
-  [0.00, 258],   // deep indigo-blue — desolate
-  [0.18, 236],   // blue — melancholy
-  [0.36, 208],   // blue-cyan — pensive
-  [0.56, 182],   // cyan-teal — the signature, and where the neutral song sits
-  [0.72, 165],   // turquoise — hopeful
-  [0.84, 150],   // emerald — a real lagoon colour, and the last green that is
-  [0.87, 132],   // ...and then the crossing is taken almost at once, because
-  [0.90, 62],    // amber        every degree between here and amber is olive
-  [1.00, 38],    // gold — joy
+  [0.00, 264],   // deep indigo-blue — desolate
+  [0.16, 244],   // blue — melancholy
+  [0.32, 222],   // blue — pensive
+  [0.46, 204],   // azure
+  [0.60, 182],   // cyan-teal — the signature, and where the neutral song sits
+  [0.68, 158],   // emerald — a real lagoon colour, and the last safe green
+  [0.74, 56],    // amber — the crossing, taken in a single step
+  [1.00, 34],    // gold — joy
 ];
 // The wide bands are the ones water can actually be — indigo through cyan and
 // turquoise to emerald on one side, amber to gold on the other — and the arc
@@ -1059,6 +1125,25 @@ function rampHue(v) {
 }
 
 /** HSL -> linear-ish RGB in 0..1 */
+/**
+ * How far, and which way, a hue family's water is allowed to travel.
+ *
+ * Signed degrees from the song's own hue: `deep` is added going down toward the
+ * trough, `crest` going up toward the top of the wave. The signs differ between
+ * families on purpose — see the long note on `ramp()`. Every destination here is
+ * a colour water is genuinely seen in, and none of them lands in the yellow-green
+ * arc that the lime guard exists to keep the palette out of.
+ */
+function rampEnds(hue) {
+  const h = ((hue % 360) + 360) % 360;
+  if (h >= 340 || h < 20) return { deep: -30, crest: 34 };   // crimson -> ember
+  if (h < 75)             return { deep: -36, crest: 16 };   // gold -> firelight
+  if (h < 150)            return { deep: 54, crest: 40 };    // lime-adjacent: leave
+  if (h < 212)            return { deep: 46, crest: -12 };   // teal -> tropical
+  if (h < 278)            return { deep: 20, crest: -56 };   // indigo -> deep ocean
+  return { deep: -26, crest: 40 };                           // violet -> neon pink
+}
+
 function hsl(hDeg, s, l) {
   const h = (((hDeg % 360) + 360) % 360) / 360;
   if (s <= 0) return { r: l, g: l, b: l };
