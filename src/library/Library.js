@@ -58,7 +58,15 @@ export class Library {
    * no password field on a page that is otherwise entirely public.
    */
   async sendMagicLink(email) {
-    const redirect = location.origin + location.pathname + '?admin';
+    // No query string on the redirect.
+    //
+    // Supabase matches this against an allow-list of URL patterns, and a
+    // trailing "?admin" is exactly the sort of thing those patterns miss — when
+    // it fails to match, the link is silently re-pointed at the project's Site
+    // URL instead, which is how a sign-in link ends up on a 404. A bare page
+    // URL is the easiest possible thing to allow-list, and the app can work out
+    // that it is being returned to by looking at the token it was handed.
+    const redirect = location.origin + location.pathname;
     const res = await fetch(URL_BASE + '/auth/v1/otp', {
       method: 'POST',
       headers: { apikey: ANON_KEY, 'Content-Type': 'application/json' },

@@ -108,11 +108,24 @@ refreshLibrary();
 
 // The curator's door is not on the landing page. It opens only with ?admin,
 // which keeps a sign-in form off a page that is otherwise entirely public.
-if (new URLSearchParams(location.search).has('admin')) {
+// Arriving back from a sign-in link is itself a request for the curator door,
+// so a returning token opens it even without ?admin in the address. That lets
+// the redirect URL stay free of a query string — see Library.sendMagicLink —
+// which is what stops the link being bounced to the Site URL and a 404.
+const RETURNING_FROM_SIGN_IN = /[#&]access_token=/.test(location.hash);
+if (new URLSearchParams(location.search).has('admin') || RETURNING_FROM_SIGN_IN) {
   library.captureSessionFromUrl();
   (async () => {
     await library.refreshIdentity();
     testSet.showAdmin({ signedIn: library.signedIn, admin: library.admin, email: library.email });
+    // Coming back from the email means the next thing wanted is the upload
+    // form, not a landing page with no sign that anything happened.
+    if (RETURNING_FROM_SIGN_IN) {
+      testSet.open();
+      ui.toast(!library.signedIn ? 'THAT SIGN-IN LINK WAS REJECTED — ASK FOR A NEW ONE'
+               : library.admin ? 'SIGNED IN — READY TO ADD TRACKS'
+                               : 'SIGNED IN, BUT NOT ON THE CURATOR LIST');
+    }
   })();
 
   testSet.onSignIn = async (email) => {
