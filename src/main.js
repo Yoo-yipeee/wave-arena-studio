@@ -167,8 +167,11 @@ if (new URLSearchParams(location.search).has('admin') || RETURNING_FROM_SIGN_IN)
    * picker shows for everything else — and so the curator sees what they are
    * about to publish before it goes up.
    */
-  testSet.onUpload = async (files) => {
-    const queue = Array.isArray(files) ? files : [files];
+  testSet.onUpload = async (items) => {
+    // Each entry is { file, title, artist } — the title has already been
+    // cleaned of filename junk and, where it mattered, corrected by hand.
+    const queue = (Array.isArray(items) ? items : [items])
+      .map(it => (it && it.file ? it : { file: it, title: '', artist: '' }));
     const done = [], failed = [];
 
     // Sequential on purpose. Analysis decodes the whole file into memory and
@@ -176,9 +179,10 @@ if (new URLSearchParams(location.search).has('admin') || RETURNING_FROM_SIGN_IN)
     // good way to make every one of them slower and some of them fail. One at a
     // time, and one failure never takes the rest of the batch with it.
     for (let i = 0; i < queue.length; i++) {
-      const file = queue[i];
+      const { file, artist } = queue[i];
+      const title = (queue[i].title || file.name.replace(/\.[^.]+$/, '')).slice(0, 120);
       const nth = queue.length > 1 ? '(' + (i + 1) + '/' + queue.length + ') ' : '';
-      const label = file.name.replace(/\.[^.]+$/, '').slice(0, 26).toUpperCase();
+      const label = title.slice(0, 26).toUpperCase();
       try {
         testSet.setStatus(nth + 'READING ' + label + '…');
         const ctx = engine.ensureContext();
@@ -191,8 +195,9 @@ if (new URLSearchParams(location.search).has('admin') || RETURNING_FROM_SIGN_IN)
 
         testSet.setStatus(nth + 'UPLOADING ' + label + ' · '
           + (file.size / 1048576).toFixed(1) + ' MB…');
-        await library.upload(file, slugify(file.name), {
-          title: file.name.replace(/\.[^.]+$/, '').slice(0, 120),
+        await library.upload(file, slugify(title || file.name), {
+          title,
+          artist: (artist || '').slice(0, 120),
           duration: buf.duration,
           mood: card.mood,
           key_name: card.key || null,

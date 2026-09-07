@@ -469,6 +469,30 @@
   }
   .ts-status.ok{color:#8fe6b0}
   .ts-status.bad{color:#ff9a9a}
+  /* Review before publishing: a filename is a poor title, and once a track is
+     in the library that name is what everyone sees. */
+  .ts-uplist{
+    max-height:44vh;overflow-y:auto;margin-top:10px;
+    scrollbar-width:thin;scrollbar-color:rgba(95,217,255,.22) transparent;
+  }
+  .ts-uplist::-webkit-scrollbar{width:6px}
+  .ts-uplist::-webkit-scrollbar-thumb{background:rgba(95,217,255,.22);border-radius:3px}
+  .ts-up{
+    display:grid;grid-template-columns:1fr 150px;gap:8px;
+    padding:9px 0;border-bottom:1px solid rgba(95,217,255,.07);
+  }
+  .ts-up input{
+    font-family:inherit;font-size:9.5px;letter-spacing:.1em;padding:9px 10px;
+    color:#eaf8ff;background:rgba(4,12,22,.6);
+    border:1px solid rgba(95,217,255,.16);border-radius:2px;min-width:0;
+  }
+  .ts-up input:focus{outline:none;border-color:rgba(95,217,255,.55)}
+  .ts-up em{
+    grid-column:1 / -1;font-style:normal;font-size:7.5px;letter-spacing:.14em;
+    color:rgba(233,247,255,.26);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .ts-form button:disabled{opacity:.4;cursor:default}
+  @media (max-width:620px){ .ts-up{grid-template-columns:1fr} }
   .ts-row{
     display:flex;align-items:center;gap:14px;padding:11px 10px;width:100%;
     text-decoration:none;border:0;border-bottom:1px solid rgba(95,217,255,.06);

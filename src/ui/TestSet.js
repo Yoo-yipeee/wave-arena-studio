@@ -19,6 +19,8 @@
  * A trailing `?` marks a reading the confidence estimate does not stand behind.
  */
 
+import { tidyTitle } from '../library/tidy.js';
+
 const SWATCH = {
   GOLD: '#c9a227', CHARTREUSE: '#9aa832', MINT: '#4fb87a', EMERALD: '#2f9e6b',
   TURQUOISE: '#2fb6a8', CYAN: '#2aa8c4', AZURE: '#3f7fd0', BLUE: '#4657c8',
@@ -192,6 +194,7 @@ export class TestSet {
 
   /** Only ever shown when the page was opened with ?admin. */
   showAdmin(state) {
+    this._adminState = state;
     const wrap = this.el.querySelector('#tsAdmin');
     const body = this.el.querySelector('#tsAdminBody');
     wrap.hidden = false;
@@ -261,9 +264,56 @@ export class TestSet {
       // chore that stops a library ever being filled.
       const files = e.target.files ? Array.from(e.target.files) : [];
       e.target.value = '';
-      if (files.length && this.onUpload) this.onUpload(files);
+      if (files.length) this._review(files);
     });
     body.querySelector('#tsOut').addEventListener('click', () => this.onSignOut && this.onSignOut());
+  }
+
+  /**
+   * Show what is about to be published, and let it be corrected first.
+   *
+   * A filename is a poor title — it carries bitrates, site stamps and
+   * "(Official Video)" — and once a track is in the library that name is what
+   * everyone sees. tidyTitle strips the junk it recognises; this is where a
+   * human fixes what it could not know, before anything is uploaded rather
+   * than after.
+   */
+  _review(files) {
+    const body = this.el.querySelector('#tsAdminBody');
+    const rows = files.map((f, i) => `
+      <div class="ts-up" data-i="${i}">
+        <input class="ts-up-t" value="${esc(tidyTitle(f.name))}" placeholder="title" />
+        <input class="ts-up-a" placeholder="artist (optional)" />
+        <em>${esc(f.name)} · ${(f.size / 1048576).toFixed(1)} MB</em>
+      </div>`).join('');
+    body.innerHTML = `
+      <div class="ts-note">About to add <b>${files.length}</b>
+        track${files.length > 1 ? 's' : ''}. Titles are cleaned up from the filename —
+        correct anything that came out wrong. <b>Only add music you have the right
+        to share.</b></div>
+      <div class="ts-uplist">${rows}</div>
+      <div class="ts-form">
+        <button id="tsGo">ADD ${files.length} TRACK${files.length > 1 ? 'S' : ''}</button>
+        <button id="tsCancel">CANCEL</button>
+      </div>
+      <div class="ts-status" id="tsStatus"></div>`;
+
+    body.querySelector('#tsCancel').addEventListener('click', () => {
+      this.showAdmin(this._adminState || { signedIn: true, admin: true, email: '' });
+    });
+    body.querySelector('#tsGo').addEventListener('click', () => {
+      const items = files.map((file, i) => {
+        const row = body.querySelector('.ts-up[data-i="' + i + '"]');
+        return {
+          file,
+          title: row.querySelector('.ts-up-t').value.trim() || tidyTitle(file.name),
+          artist: row.querySelector('.ts-up-a').value.trim(),
+        };
+      });
+      body.querySelector('#tsGo').disabled = true;
+      body.querySelector('#tsCancel').disabled = true;
+      if (this.onUpload) this.onUpload(items);
+    });
   }
 
   setStatus(msg, kind) {
