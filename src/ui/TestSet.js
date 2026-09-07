@@ -69,17 +69,152 @@ const SONGS = [
 const searchUrl = (s) =>
   'https://www.youtube.com/results?search_query=' + encodeURIComponent(s.a + ' ' + s.t);
 
-const facts = (s) =>
-  [s.mood, s.key, s.bpm ? s.bpm + ' BPM' : '', s.c]
-    .filter(Boolean)
-    .map(x => `<b${/\?$/.test(x) ? ' class="soft"' : ''}>${x}</b>`)
+/**
+ * The '?' marks a reading the analyser does not stand behind, and it has to
+ * carry the dimmed class with it.
+ *
+ * This tested for '?' at the END of the finished string, which worked for a key
+ * ("Fm?") and silently failed for every tempo, because a tempo is composed into
+ * "188? BPM" and ends in "BPM". So the one reading most likely to be wrong —
+ * Tum Hi Ho's 188 against a true 56 — was being printed at full confidence,
+ * which is worse than not marking anything at all. Test the value, not the
+ * sentence it ends up inside.
+ */
+const facts = (s) => {
+  const parts = [
+    { v: s.mood, soft: false },
+    { v: s.key, soft: /\?/.test(String(s.key || '')) },
+    { v: s.bpm ? String(s.bpm).replace('?', '') + ' BPM' : '',
+      soft: /\?/.test(String(s.bpm || '')) },
+    { v: s.c, soft: false },
+  ];
+  return parts
+    .filter(p => p.v)
+    .map(p => `<b${p.soft ? ' class="soft"' : ''}>${esc(p.v)}</b>`)
     .join('<i></i>');
+};
+
+/**
+ * Library rows come out of the database, so they are data rather than markup —
+ * even with a single trusted curator, text from a table has no business being
+ * parsed as HTML.
+ */
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
 
 export class TestSet {
   constructor() {
-    this.onPlay = null;          // (path, title) => void
+    this.onPlay = null;          // (path, title)  — a track that ships with the app
+    this.onPlayLibrary = null;   // (url, title)   — a track from the shared library
+    this.onSignIn = null;        // (email)
+    this.onSignOut = null;
+    this.onUpload = null;        // (file)
     this.el = null;
     this._build();
+  }
+
+  /**
+   * The library arrives after the panel does — it is a network round trip and
+   * the panel must not wait on it. Rows are appended when they land.
+   */
+  setLibrary(tracks, err) {
+    const box = this.el.querySelector('#tsLibrary');
+    const group = this.el.querySelector('#tsLibGroup');
+    box.innerHTML = '';
+    if (err) {
+      group.hidden = false;
+      box.innerHTML = '<div class="ts-note">The library could not be reached. '
+        + 'Everything else on this page still works.</div>';
+      return;
+    }
+    if (!tracks || !tracks.length) { group.hidden = true; return; }
+    group.hidden = false;
+    for (const t of tracks) {
+      const b = document.createElement('button');
+      b.className = 'ts-row ts-play';
+      // The database keeps confidence as booleans; the row convention here is a
+      // trailing '?'. Without this the library would show every reading as
+      // certain, which is exactly the dishonesty the card exists to avoid.
+      const meta = {
+        mood: t.mood,
+        key: t.key_name ? t.key_name + (t.key_sure ? '' : '?') : '',
+        bpm: t.bpm ? t.bpm + (t.bpm_sure ? '' : '?') : '',
+        c: t.colour,
+      };
+      const sub = [t.artist, t.licence].filter(Boolean).join(' · ');
+      b.innerHTML =
+        `<span class="ts-dot" style="--c:${SWATCH[t.colour] || '#7fd8ff'}"></span>
+         <span class="ts-name"><b>${esc(t.title)}</b><em>${esc(sub)}</em></span>
+         <span class="ts-read">${facts(meta)}</span>`;
+      b.addEventListener('click', () => {
+        this.close();
+        if (this.onPlayLibrary) this.onPlayLibrary(t, t.title);
+      });
+      box.appendChild(b);
+    }
+  }
+
+  /** Only ever shown when the page was opened with ?admin. */
+  showAdmin(state) {
+    const wrap = this.el.querySelector('#tsAdmin');
+    const body = this.el.querySelector('#tsAdminBody');
+    wrap.hidden = false;
+    body.innerHTML = '';
+
+    if (!state.signedIn) {
+      body.innerHTML = `
+        <div class="ts-note">Sign in to add tracks. A one-time link is emailed to you —
+          there is no password on this page.</div>
+        <div class="ts-form">
+          <input type="email" id="tsEmail" placeholder="you@example.com" autocomplete="email" />
+          <button id="tsSend">SEND LINK</button>
+        </div>
+        <div class="ts-status" id="tsStatus"></div>`;
+      const send = () => {
+        const v = body.querySelector('#tsEmail').value.trim();
+        if (v && this.onSignIn) this.onSignIn(v);
+      };
+      body.querySelector('#tsSend').addEventListener('click', send);
+      body.querySelector('#tsEmail').addEventListener('keydown', e => {
+        if (e.key === 'Enter') send();
+      });
+      return;
+    }
+
+    if (!state.admin) {
+      body.innerHTML = `
+        <div class="ts-note">Signed in as <b>${esc(state.email || '')}</b>, but this account
+          is not on the curator list, so it cannot add tracks.</div>
+        <div class="ts-form"><button id="tsOut">SIGN OUT</button></div>`;
+      body.querySelector('#tsOut').addEventListener('click', () => this.onSignOut && this.onSignOut());
+      return;
+    }
+
+    body.innerHTML = `
+      <div class="ts-note">Signed in as <b>${esc(state.email || '')}</b>. Pick an audio file —
+        it is analysed here first, so the library shows its reading like everything else.
+        <b>Only add music you have the right to share.</b></div>
+      <div class="ts-form">
+        <input type="file" id="tsFile" accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac" />
+        <button id="tsOut">SIGN OUT</button>
+      </div>
+      <div class="ts-status" id="tsStatus"></div>`;
+    body.querySelector('#tsFile').addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (f && this.onUpload) this.onUpload(f);
+    });
+    body.querySelector('#tsOut').addEventListener('click', () => this.onSignOut && this.onSignOut());
+  }
+
+  setStatus(msg, kind) {
+    const s = this.el.querySelector('#tsStatus');
+    if (!s) return;
+    s.textContent = msg || '';
+    s.className = 'ts-status' + (kind ? ' ' + kind : '');
   }
 
   _build() {
@@ -93,10 +228,20 @@ export class TestSet {
         <div class="ts-scroll">
           <div class="ts-group">PLAY NOW &mdash; SHIPS WITH THE APP</div>
           <div class="ts-rows" id="tsDemos"></div>
+
+          <div class="ts-group" id="tsLibGroup" hidden>THE LIBRARY
+            <em>added by the curator, playable by anyone.</em></div>
+          <div class="ts-rows" id="tsLibrary"></div>
+
           <div class="ts-group">BRING YOUR OWN &mdash; THE TEST SET
             <em>the fourteen this build was tuned against. Open one, come back,
             press PLAY FROM A TAB.</em></div>
           <div class="ts-rows" id="tsSongs"></div>
+
+          <div id="tsAdmin" hidden>
+            <div class="ts-group">CURATOR</div>
+            <div class="ts-admin" id="tsAdminBody"></div>
+          </div>
         </div>
         <div class="ts-foot">
           PLAY NOW tracks are by <b>Kevin MacLeod</b> (incompetech.com), licensed

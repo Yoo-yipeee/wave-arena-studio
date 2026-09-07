@@ -20,6 +20,7 @@ import { Touch } from './ui/Touch.js';
 import { Recorder } from './ui/Recorder.js';
 import { Settings } from './ui/Settings.js';
 import { TestSet } from './ui/TestSet.js';
+import { Library, slugify } from './library/Library.js';
 
 const quality = detectQuality();
 const stage = new Stage(document.getElementById('stage'), quality);
@@ -69,6 +70,96 @@ testSet.onPlay = (path, title) => {
     await engine.loadArrayBuffer(await res.arrayBuffer(), title);
   }, 'LOADING ' + title.toUpperCase());
 };
+
+// ---------------------------------------------------------------------------
+// The shared library — one curator adds, everybody plays
+// ---------------------------------------------------------------------------
+const library = new Library();
+
+testSet.onPlayLibrary = (track, title) => {
+  engine.ensureContext();
+  beginTrack(async () => {
+    const res = await fetch(library.audioUrl(track.path));
+    if (!res.ok) throw new Error('library fetch failed: ' + res.status);
+    await engine.loadArrayBuffer(await res.arrayBuffer(), title);
+  }, 'LOADING ' + String(title).toUpperCase().slice(0, 34),
+     'THAT LIBRARY TRACK COULD NOT BE LOADED');
+};
+
+/**
+ * The library is optional furniture. If Supabase is unreachable, rate limited,
+ * or simply not configured in a fork, the app must lose one section and nothing
+ * else — every other way in still works with no network at all.
+ */
+async function refreshLibrary() {
+  try {
+    testSet.setLibrary(await library.list());
+  } catch (err) {
+    console.warn('library unavailable:', err.message);
+    testSet.setLibrary(null, err);
+  }
+}
+refreshLibrary();
+
+// The curator's door is not on the landing page. It opens only with ?admin,
+// which keeps a sign-in form off a page that is otherwise entirely public.
+if (new URLSearchParams(location.search).has('admin')) {
+  library.captureSessionFromUrl();
+  (async () => {
+    await library.refreshIdentity();
+    testSet.showAdmin({ signedIn: library.signedIn, admin: library.admin, email: library.email });
+  })();
+
+  testSet.onSignIn = async (email) => {
+    testSet.setStatus('SENDING…');
+    try {
+      await library.sendMagicLink(email);
+      testSet.setStatus('LINK SENT — OPEN IT ON THIS DEVICE', 'ok');
+    } catch (err) {
+      testSet.setStatus(String(err.message || err).toUpperCase().slice(0, 120), 'bad');
+    }
+  };
+
+  testSet.onSignOut = () => {
+    library.signOut();
+    testSet.showAdmin({ signedIn: false, admin: false, email: '' });
+  };
+
+  /**
+   * Analyse before uploading, so a library row carries the same reading the
+   * picker shows for everything else — and so the curator sees what they are
+   * about to publish before it goes up.
+   */
+  testSet.onUpload = async (file) => {
+    try {
+      testSet.setStatus('READING ' + file.name.slice(0, 30).toUpperCase() + '…');
+      const ctx = engine.ensureContext();
+      const buf = await ctx.decodeAudioData(await file.arrayBuffer());
+      const env = computePeaks(buf);
+      const id = new SongIdentity(buf, env);
+      id.paletteMode = settings.get('palette');
+      id._recompute();
+      const card = id.card();
+
+      testSet.setStatus('UPLOADING ' + (file.size / 1048576).toFixed(1) + ' MB…');
+      await library.upload(file, slugify(file.name), {
+        title: file.name.replace(/\.[^.]+$/, '').slice(0, 120),
+        duration: buf.duration,
+        mood: card.mood,
+        key_name: card.key || null,
+        bpm: card.bpm || null,
+        colour: card.colour,
+        hue: card.hue,
+        key_sure: !!card.keySure,
+        bpm_sure: !!card.bpmSure,
+      });
+      testSet.setStatus('ADDED — ' + card.mood + ' · ' + card.colour, 'ok');
+      refreshLibrary();
+    } catch (err) {
+      testSet.setStatus(String(err.message || err).toUpperCase().slice(0, 120), 'bad');
+    }
+  };
+}
 
 ui.on.record = () => {
   if (!Recorder.supported) { ui.toast('RECORDING IS NOT SUPPORTED IN THIS BROWSER'); return; }
@@ -140,7 +231,7 @@ const nextFrame = () => new Promise(resolve => {
   setTimeout(go, 120);
 });
 
-async function beginTrack(loader, label) {
+async function beginTrack(loader, label, failMsg) {
   ui.showLoading(label);
   try {
     await engine.resume();
@@ -148,7 +239,10 @@ async function beginTrack(loader, label) {
   } catch (err) {
     console.error(err);
     ui.hideLoading();
-    ui.toast('COULD NOT DECODE THAT FILE — TRY MP3, WAV OR M4A');
+    // A dropped file that will not decode and a library track that will not
+    // download are different problems, and telling someone to try a different
+    // format when the fetch 404'd sends them off fixing the wrong thing.
+    ui.toast(failMsg || 'COULD NOT DECODE THAT FILE — TRY MP3, WAV OR M4A');
     return;
   }
 

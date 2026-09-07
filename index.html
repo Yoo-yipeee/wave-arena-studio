@@ -422,6 +422,33 @@
     font-size:8px;line-height:1.9;color:rgba(233,247,255,.3);
   }
   .ts-rows{display:flex;flex-direction:column}
+  .ts-note{
+    padding:12px 10px;font-size:8.5px;line-height:2;letter-spacing:.14em;
+    color:rgba(233,247,255,.4);
+  }
+  .ts-note b{color:rgba(233,247,255,.82);font-weight:400}
+  .ts-admin{padding:4px 10px 12px}
+  .ts-form{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px}
+  .ts-form input[type=email]{
+    flex:1 1 200px;font-family:inherit;font-size:9.5px;letter-spacing:.12em;
+    padding:11px 12px;color:#eaf8ff;
+    background:rgba(4,12,22,.6);border:1px solid rgba(95,217,255,.18);border-radius:2px;
+  }
+  .ts-form input[type=email]:focus{outline:none;border-color:rgba(95,217,255,.55)}
+  .ts-form input[type=file]{font-family:inherit;font-size:8.5px;color:rgba(233,247,255,.55)}
+  .ts-form button{
+    font-family:inherit;font-size:8.5px;letter-spacing:.26em;text-indent:.26em;
+    padding:11px 20px;cursor:pointer;color:rgba(233,247,255,.85);
+    background:rgba(10,26,44,.5);border:1px solid rgba(95,217,255,.28);
+    transition:all .3s ease;
+  }
+  .ts-form button:hover{border-color:rgba(140,235,255,.7);color:#fff}
+  .ts-status{
+    margin-top:10px;font-size:8px;letter-spacing:.2em;min-height:12px;
+    color:rgba(233,247,255,.45);
+  }
+  .ts-status.ok{color:#8fe6b0}
+  .ts-status.bad{color:#ff9a9a}
   .ts-row{
     display:flex;align-items:center;gap:14px;padding:11px 10px;width:100%;
     text-decoration:none;border:0;border-bottom:1px solid rgba(95,217,255,.06);

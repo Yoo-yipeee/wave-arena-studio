@@ -67,6 +67,27 @@ All seven are by **Kevin MacLeod** ([incompetech.com](https://incompetech.com/))
 licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — see
 [demo-audio/CREDITS.md](demo-audio/CREDITS.md).
 
+### The library
+
+Under **PICK A SONG** there is also a **library** — a shared, growing collection
+that anyone visiting can play. It is curated: one account can add to it,
+everybody else can listen. Tracks are stored in Supabase, and each row carries
+the reading the analyser gave it, so a library track shows its mood, key, tempo
+and colour exactly the way the shipped ones do.
+
+The security model is worth stating plainly, because the anon key in
+`src/library/Library.js` is published on purpose:
+
+- **Reads are open to the world.** That is what makes the library work.
+- **Writes are impossible without being on a server-side allow-list.** Not
+  hidden — *impossible*. Row level security checks every insert against a table
+  that no client can read, and the same check guards the storage bucket. Holding
+  the key, or reading this file, gets you nothing.
+- Signing in creates an account; an account grants nothing on its own.
+
+If Supabase is unreachable the library section simply doesn't appear. Every
+other way into the app keeps working with no network at all.
+
 ### The test set
 
 **TRY THE TEST SET** on the landing page lists the fourteen songs this build was
@@ -249,7 +270,8 @@ src/
     shaders/materials.js    surface shading, foam, subsurface scattering
   renderer/
     Stage.js                scene, post-processing, adaptive quality
-  ui/                       UI, settings, touch, clip recorder, the test set
+  ui/                       UI, settings, touch, clip recorder, the song picker
+  library/Library.js        the shared library: auth, storage and rows over plain fetch
 ```
 
 Two files carry most of the interesting decisions: **`SongIdentity.js`** (what
