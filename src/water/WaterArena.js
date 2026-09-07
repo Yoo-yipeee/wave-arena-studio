@@ -230,8 +230,25 @@ export class WaterArena {
   /** Hand the arena the song's world. */
   setIdentity(identity) {
     this.identity = identity;
-    this._pal = identity.palette();
-    const m = identity.material();
+    this._palVersion = -1;
+    this._refreshPalette();
+  }
+
+  /**
+   * The palette is cached rather than rebuilt every frame, and the cache used
+   * to be filled once — at the moment the identity was handed over — and never
+   * again. On a file that is invisible, because the identity is decided before
+   * playback and deliberately held. On a live input it meant the water wore the
+   * colour of whatever happened to be playing when you connected, permanently:
+   * change the song in the tab and nothing could follow it, because the only
+   * copy of the colour was never re-read.
+   */
+  _refreshPalette() {
+    const id = this.identity;
+    if (!id || id.version === this._palVersion) return;
+    this._palVersion = id.version;
+    this._pal = id.palette();
+    const m = id.material();
     // A wide, dynamic record earns a wider pool; a broken one foams more.
     this.mistMat.uniforms.uSize.value = this.quality.particleSize * (0.8 + m.spray * 0.7);
   }
@@ -240,6 +257,8 @@ export class WaterArena {
   update(dt, music, perf, awake, dtSmooth = dt) {
     const U = this.U;
     U.uTime.value += dt;
+    // Cheap: a version compare, and a rebuild only when the reading moved.
+    this._refreshPalette();
 
     U.uAmp.value = music.amplitude;
     U.uMids.value = music.mids;

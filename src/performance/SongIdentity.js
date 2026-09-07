@@ -416,6 +416,10 @@ export class SongIdentity {
   observe(harmony, dt) {
     if (!harmony) return;
     const conf = harmony.confidence * (0.35 + harmony.tonalness * 0.65);
+    // How much the live harmony read is worth, smoothed. On a live identity
+    // this is what valence leans on in place of an offline key confidence.
+    this.liveConf = (this.liveConf || 0)
+      + (harmony.confidence - (this.liveConf || 0)) * (1 - Math.exp(-dt * 0.15));
     if (conf < 0.05) return;
     const target = harmony.mode * 0.5 + 0.5;
     // The live reading only gets to move what the offline one was unsure of.
@@ -429,8 +433,70 @@ export class SongIdentity {
     const trust = 1 - this.keyConfidence * 0.75;
     const k = (1 - Math.exp(-dt * 0.35)) * (1 - this.settled * 0.92) * conf * trust;
     this.warmth += (target - this.warmth) * k;
-    // A confident offline read also locks sooner.
-    this.settled = Math.min(1, this.settled + dt * (0.035 + this.keyConfidence * 0.05));
+
+    // Settling exists to stop a noisy live reading overwriting a confident
+    // whole-track one. On a live input there IS no whole-track reading to
+    // defend — keyConfidence is zero by construction — so locking just freezes
+    // the identity onto whatever was playing during the first thirty seconds.
+    //
+    // Measured: from a live start, `settled` reached 1.0 in 30s and then took
+    // three minutes of continuously opposite music to move the hue 50 degrees,
+    // where reading that same music fresh got there in thirty seconds. Change
+    // the song in the tab and the water kept wearing the last one's colour.
+    // Live therefore settles to a ceiling, not to a lock.
+    const ceiling = this._live ? LIVE_SETTLE_CEILING : 1;
+    this.settled = Math.min(ceiling, this.settled + dt * (0.035 + this.keyConfidence * 0.05));
+    this._recompute();
+  }
+
+  /**
+   * Learn tempo and timbre from a live input.
+   *
+   * Without this, a live identity keeps the placeholder numbers it was created
+   * with — bpmOffline 120, pulse 0.4, attack 0.4, brightness 0.5 — for as long
+   * as it exists. Those feed `swellSeconds`, so wave speed came out as a fixed
+   * 1.58 seconds for every song ever played through a tab or a microphone. The
+   * water was not moving wrongly so much as not listening at all: the one
+   * property most obviously "about" the music was a constant.
+   *
+   * These are the live equivalents of what the offline pass measures from the
+   * whole buffer. They are smoothed hard, because unlike the offline read there
+   * is no averaging over a track to lean on — a single loud cymbal must not
+   * become the song's character.
+   */
+  observeLive(m, dt) {
+    if (!this._live || !m || !m.playing) return;
+    const k = 1 - Math.exp(-dt * 0.22);
+
+    // Tempo, but only while the beat tracker actually has a lock on it.
+    if (m.bpm > 45 && m.bpm < 210 && m.beatConfidence > 0.35) {
+      this.bpmOffline += (m.bpm - this.bpmOffline) * k * m.beatConfidence;
+      this.beatPeriod = 60 / Math.max(1, this.bpmOffline);
+    }
+    // How regular that beat is — the live stand-in for autocorrelation height.
+    this.pulse += (clamp01(m.beatConfidence * 1.1) - this.pulse) * k;
+
+    // Timbre. `smoothness` is sustained-vs-percussive, so attack is its
+    // opposite; brightness is the treble share of the spectrum.
+    const attack = clamp01(1 - (m.smoothness != null ? m.smoothness : 0.5));
+    const tot = m.bass + m.mids + m.highs + m.air;
+    const bright = tot > 1e-4 ? clamp01(((m.highs + m.air) / tot - 0.16) / 0.34) : this.brightness;
+    this.attack += (attack - this.attack) * k;
+    this.brightness += (bright - this.brightness) * k;
+    this._recompute();
+  }
+
+  /**
+   * A new song has started on a live input. Forget how sure we were.
+   *
+   * Deliberately keeps `warmth` and `drive` rather than snapping to the
+   * defaults: the next reading converges within a few seconds anyway, and
+   * resetting them outright makes the arena flash through an unrelated colour
+   * on its way to the right one.
+   */
+  resetLive() {
+    if (!this._live) return;
+    this.settled = 0;
     this._recompute();
   }
 
@@ -539,10 +605,30 @@ export class SongIdentity {
     // produced pop record often has no clean answer, and pretending otherwise
     // is how every song ended up the same colour before.
     const modeV = this.warmth - 0.5;
-    const conf = Math.max(this.keyConfidence, 0.30);
+    // On a live input `keyConfidence` is zero by construction — there is no
+    // offline pass to set it — so this floored to 0.30 forever and capped the
+    // mode contribution at under a third. The effect was that a tab could never
+    // reach either end of the ramp: a plainly major track sat in turquoise and
+    // a plainly minor one never got past blue, whatever was playing. The live
+    // harmony analyser has its own confidence, and on a live identity that is
+    // the best evidence available, so let it speak.
+    const conf = Math.max(this.keyConfidence, this._live ? this.liveConf || 0 : 0, 0.30);
+
+    // Offline, mode leads because a whole-track chroma read is good evidence.
+    // Live it is not: measured on a tab, the analyser reported Ossuary — which
+    // reads D minor offline — as F major, its relative, flipping between the
+    // two every few seconds. Mode therefore cannot lead a live reading, and
+    // pinning valence to it left every live song inside a narrow cyan band
+    // whatever was playing.
+    //
+    // Brightness can lead instead. It is a spectral ratio, it needs no key, and
+    // it cannot make the relative-major mistake — the same argument that made
+    // timbre the guard on tempo. So on a live input the trustworthy signal is
+    // weighted up and the shaky one is left where it is.
+    const brightW = this._live ? 0.95 : 0.34;
     const drive = modeV * 1.55 * conf
       + this.consonance * 0.32
-      + (this.brightness - 0.5) * 0.34;
+      + (this.brightness - 0.5) * brightW;
     // A soft knee rather than a hard clamp. A confidently major acoustic cover
     // drove this to 1.175 and was cut to 1.0, which means every song from there
     // upward collapsed onto the same gold with no headroom left for anything
@@ -557,6 +643,14 @@ export class SongIdentity {
   }
 
   _recompute() {
+    // Bumped on every recomputation so anything holding a derived copy — the
+    // arena caches the palette rather than rebuilding it per frame — can tell
+    // that its copy is stale. Without this the water kept the colour it was
+    // given at connect no matter what the identity did afterwards, which is
+    // invisible on a file (decided once, held on purpose) and completely wrong
+    // on a live input, where the song changes underneath you.
+    this.version = (this.version || 0) + 1;
+
     const V = this.valence, A = this.arousal;
 
     // ---- hue: valence walks a path that never crosses a wrong colour -------
@@ -765,6 +859,15 @@ export class SongIdentity {
     };
   }
 }
+
+/**
+ * How certain a LIVE reading is ever allowed to become.
+ *
+ * Below 1 by design. A live input has no future to read, so its identity has to
+ * stay able to follow the music; a full lock is only appropriate when there is
+ * a confident whole-track analysis underneath it worth protecting.
+ */
+const LIVE_SETTLE_CEILING = 0.55;
 
 function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
 

@@ -214,6 +214,47 @@ const idleMusic = {
 // ---------------------------------------------------------------------------
 // Track loading
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Live input: noticing that the song changed
+// ---------------------------------------------------------------------------
+//
+// A file has a beginning, so the arena knows when to form a new opinion. A tab
+// does not: the playlist moves on and the audio simply becomes a different song
+// mid-stream, with nothing to mark it.
+//
+// The mark that does exist is the gap. Track changes on any player leave a
+// short near-silence between songs, and that is enough — a gap long enough to
+// be a change rather than a rest, followed by sound coming back.
+let _gap = 0;             // seconds of near-silence so far
+let _sawGap = false;      // a long enough one happened; waiting for audio again
+let _sinceNew = 1e9;      // stops a stuttering stream re-triggering repeatedly
+let _newSongCard = 0;
+
+const GAP_ENOUGH = 0.45;  // below this it is a breath, not a track change
+const RETRIGGER_LOCK = 8;
+
+function watchForNewSong(music, dt) {
+  _sinceNew += dt;
+  if (music.silence > 0.55) {
+    _gap += dt;
+    if (_gap > GAP_ENOUGH) _sawGap = true;
+    return;
+  }
+  if (_sawGap && _sinceNew > RETRIGGER_LOCK) {
+    _sinceNew = 0;
+    identity.resetLive();   // stop defending the previous song's reading
+    choreo.resetLive();     // and its loudness scale, which belonged to that song
+    ui.toast('NEW SONG — READING IT');
+    // Show the new reading once there has been enough music to have one.
+    clearTimeout(_newSongCard);
+    _newSongCard = setTimeout(() => {
+      if (engine.live && identity) ui.showIdentity(identity.card(), 3600);
+    }, 9000);
+  }
+  _gap = 0;
+  _sawGap = false;
+}
+
 /**
  * Let the renderer paint before the next blocking step.
  *
@@ -491,6 +532,12 @@ function frame(now) {
   if (identity) {
     if (music.harmony) identity.observe(music.harmony, dtSmooth);
     if (music.pace) identity.observePace(music.pace, dtSmooth);
+    if (engine.live) {
+      // Tempo and timbre are placeholders on a live identity until something
+      // measures them; without this the swell is a constant for every song.
+      identity.observeLive(music, dtSmooth);
+      watchForNewSong(music, dtSmooth);
+    }
   }
 
   // choreography events -> camera

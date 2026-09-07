@@ -190,6 +190,30 @@ export class Choreographer {
    * section state, phrase clock and rolling histories — so it opens mid-chorus
    * with the wrong dynamics for its first half-minute.
    */
+  /**
+   * A live input has moved on to a different song.
+   *
+   * Only the things that belonged to the PREVIOUS song are cleared. `_eMax` is
+   * the loudness the level scale is measured against, so carrying it over means
+   * a quiet track after a loud one reads as permanently small — and the running
+   * histories describe an arrangement that has ended. The visual state (height,
+   * heat, forms) is deliberately left alone: it is mid-flight and smoothing will
+   * carry it into the new song rather than snapping the arena flat.
+   */
+  resetLive() {
+    this._eMax = 0.05;
+    this._bassHist = [];
+    this._riseHist = [];
+    this._hiHist = [];
+    this._sinceDrop = 99;
+    this._sinceSurge = 99;
+    this._voiceSeen = 0;
+    this._lastDropTime = -999;
+    this._lastSurgeTime = -999;
+    this._firedDrop = -1;
+    this.phrase = -1;
+  }
+
   resetTrack(plan = null, identity = null) {
     this.plan = plan;
     this.identity = identity;
