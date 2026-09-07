@@ -86,6 +86,71 @@ export class Library {
     return true;
   }
 
+  /**
+   * Take a sign-in link that landed somewhere useless.
+   *
+   * Supabase validates `email_redirect_to` against an allow-list and silently
+   * falls back to the project's Site URL when it does not match — which on a
+   * default project is http://localhost:3000, a page that does not exist. The
+   * emailed token is perfectly valid; only the address it was pointed at is
+   * wrong. So rather than making a dashboard setting a prerequisite for signing
+   * in at all, accept the link itself.
+   *
+   * Two shapes arrive: one that already carries the session in its fragment,
+   * and one that still has to be redeemed.
+   */
+  async useLink(raw) {
+    const text = String(raw || '').trim();
+    if (!text) throw new Error('paste the link first');
+
+    // Shape 1: the redirect already happened, tokens are in the fragment.
+    const frag = text.indexOf('#');
+    if (frag >= 0) {
+      const p = new URLSearchParams(text.slice(frag + 1));
+      const access_token = p.get('access_token');
+      if (access_token) {
+        this._store({
+          access_token,
+          refresh_token: p.get('refresh_token'),
+          expires_at: Date.now() + (parseInt(p.get('expires_in'), 10) || 3600) * 1000,
+          user: null,
+        });
+        return true;
+      }
+    }
+
+    // Shape 2: an unredeemed /auth/v1/verify link. Redeem it over the API
+    // instead of following it, so the broken redirect is never involved.
+    let token = null, type = 'magiclink';
+    try {
+      const u = new URL(text);
+      token = u.searchParams.get('token_hash') || u.searchParams.get('token');
+      type = u.searchParams.get('type') || 'magiclink';
+    } catch (e) {
+      token = /^[A-Za-z0-9_-]{16,}$/.test(text) ? text : null;   // a bare token
+    }
+    if (!token) throw new Error('that does not look like a sign-in link');
+
+    const res = await fetch(URL_BASE + '/auth/v1/verify', {
+      method: 'POST',
+      headers: { apikey: ANON_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, token_hash: token }),
+    });
+    if (!res.ok) {
+      const t = await res.text().catch(() => '');
+      throw new Error('link rejected — it may have expired. ' + t.slice(0, 90));
+    }
+    const s = await j(res);
+    if (!s.access_token) throw new Error('no session came back');
+    this._store({
+      access_token: s.access_token,
+      refresh_token: s.refresh_token,
+      expires_at: Date.now() + (s.expires_in || 3600) * 1000,
+      user: s.user || null,
+    });
+    return true;
+  }
+
   async refreshIdentity() {
     if (!this.signedIn) { this.admin = false; return false; }
     try {
@@ -93,7 +158,12 @@ export class Library {
       if (who.ok) {
         const user = await j(who);
         this._store(Object.assign({}, this.session, { user }));
-      } else if (who.status === 401) {
+      } else {
+        // Any refusal means this session is not usable — not just 401. A
+        // malformed or forged token can come back 400 or 403, and treating only
+        // 401 as failure left the app reporting "signed in" for a token the
+        // server had plainly rejected, with a blank email where the address
+        // should have been.
         this._store(null); this.admin = false; return false;
       }
       const res = await fetch(URL_BASE + '/rest/v1/rpc/wave_is_admin', {

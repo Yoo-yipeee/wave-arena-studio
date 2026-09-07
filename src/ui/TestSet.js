@@ -112,8 +112,32 @@ export class TestSet {
     this.onSignIn = null;        // (email)
     this.onSignOut = null;
     this.onUpload = null;        // (file)
+    this.onPickTab = null;       // "the song is playing over there, capture it"
+    this.onPasteLink = null;     // (url) — rescue a sign-in link that went astray
     this.el = null;
     this._build();
+  }
+
+  /**
+   * Step two of "bring your own".
+   *
+   * Opening the song was never the whole job — the point is to watch it here,
+   * and picking a row used to leave you on YouTube with no hint that anything
+   * else was expected. getDisplayMedia needs its own user gesture, and it has
+   * to be made once the song is actually playing, so the panel waits with a
+   * single obvious button for when you come back.
+   */
+  armTabPick(title) {
+    const wrap = this.el.querySelector('#tsPick');
+    wrap.hidden = false;
+    wrap.querySelector('#tsPickTitle').textContent = title || 'that song';
+    this.el.querySelector('.ts-inner').scrollTop = 0;
+    wrap.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+
+  disarmTabPick() {
+    const wrap = this.el.querySelector('#tsPick');
+    if (wrap) wrap.hidden = true;
   }
 
   /**
@@ -172,7 +196,18 @@ export class TestSet {
           <input type="email" id="tsEmail" placeholder="you@example.com" autocomplete="email" />
           <button id="tsSend">SEND LINK</button>
         </div>
-        <div class="ts-status" id="tsStatus"></div>`;
+        <div class="ts-status" id="tsStatus"></div>
+        <div class="ts-note" style="margin-top:14px">
+          <b>Link points at localhost, or won't open?</b> Supabase falls back to its
+          configured Site URL when a redirect is not on its allow-list, which is how a
+          link ends up pointing somewhere that does not exist. The link still contains a
+          valid one-time token, so paste the whole thing here and it will be used
+          directly.
+        </div>
+        <div class="ts-form">
+          <input type="email" id="tsPaste" placeholder="paste the whole link from the email" />
+          <button id="tsUse">USE LINK</button>
+        </div>`;
       const send = () => {
         const v = body.querySelector('#tsEmail').value.trim();
         if (v && this.onSignIn) this.onSignIn(v);
@@ -181,6 +216,14 @@ export class TestSet {
       body.querySelector('#tsEmail').addEventListener('keydown', e => {
         if (e.key === 'Enter') send();
       });
+      const use = () => {
+        const v = body.querySelector('#tsPaste').value.trim();
+        if (v && this.onPasteLink) this.onPasteLink(v);
+      };
+      body.querySelector('#tsUse').addEventListener('click', use);
+      body.querySelector('#tsPaste').addEventListener('keydown', e => {
+        if (e.key === 'Enter') use();
+      });
       return;
     }
 
@@ -188,7 +231,8 @@ export class TestSet {
       body.innerHTML = `
         <div class="ts-note">Signed in as <b>${esc(state.email || '')}</b>, but this account
           is not on the curator list, so it cannot add tracks.</div>
-        <div class="ts-form"><button id="tsOut">SIGN OUT</button></div>`;
+        <div class="ts-form"><button id="tsOut">SIGN OUT</button></div>
+        <div class="ts-status" id="tsStatus"></div>`;
       body.querySelector('#tsOut').addEventListener('click', () => this.onSignOut && this.onSignOut());
       return;
     }
@@ -224,6 +268,14 @@ export class TestSet {
       <div class="ts-inner">
         <div class="ts-head">
           <div class="ts-title">PICK A SONG</div>
+        </div>
+        <div id="tsPick" hidden>
+          <div class="ts-pick">
+            <div class="ts-pick-h">NOW PLAYING IT IN THE OTHER TAB?</div>
+            <div class="ts-pick-s">Start <b id="tsPickTitle"></b> over there, then come
+              back and pick that tab. Tick <b>share tab audio</b> in the box Chrome shows.</div>
+            <button id="tsPickBtn">PICK THE TAB</button>
+          </div>
         </div>
         <div class="ts-scroll">
           <div class="ts-group">PLAY NOW &mdash; SHIPS WITH THE APP</div>
@@ -278,10 +330,21 @@ export class TestSet {
       a.rel = 'noopener noreferrer';
       a.innerHTML =
         `<span class="ts-dot" style="--c:${SWATCH[s.c] || '#7fd8ff'}"></span>
-         <span class="ts-name"><b>${s.t}</b><em>${s.a}</em></span>
+         <span class="ts-name"><b>${esc(s.t)}</b><em>${esc(s.a)}</em></span>
          <span class="ts-read">${facts(s)}</span>`;
+      // The link still opens normally — middle-click and "open in new tab" keep
+      // working — but choosing a song here is a statement of intent to watch it,
+      // so the panel turns into step two instead of dropping you on YouTube and
+      // leaving you to work out what to do next.
+      a.addEventListener('click', () => this.armTabPick(s.t));
       songs.appendChild(a);
     }
+
+    panel.querySelector('#tsPickBtn').addEventListener('click', () => {
+      this.disarmTabPick();
+      this.close();
+      if (this.onPickTab) this.onPickTab();
+    });
 
     panel.querySelector('.ts-done').addEventListener('click', () => this.close());
     panel.addEventListener('click', (e) => { if (e.target === panel) this.close(); });

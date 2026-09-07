@@ -76,6 +76,11 @@ testSet.onPlay = (path, title) => {
 // ---------------------------------------------------------------------------
 const library = new Library();
 
+// Step two of "bring your own": the song is now playing over there, so capture
+// it. This needs its own click — getDisplayMedia demands a fresh user gesture,
+// and the one that opened YouTube was spent in another tab.
+testSet.onPickTab = () => ui.emit('tab');
+
 testSet.onPlayLibrary = (track, title) => {
   engine.ensureContext();
   beginTrack(async () => {
@@ -117,6 +122,25 @@ if (new URLSearchParams(location.search).has('admin')) {
       testSet.setStatus('LINK SENT — OPEN IT ON THIS DEVICE', 'ok');
     } catch (err) {
       testSet.setStatus(String(err.message || err).toUpperCase().slice(0, 120), 'bad');
+    }
+  };
+
+  testSet.onPasteLink = async (url) => {
+    testSet.setStatus('CHECKING THE LINK…');
+    try {
+      await library.useLink(url);
+      await library.refreshIdentity();
+      testSet.showAdmin({ signedIn: library.signedIn, admin: library.admin, email: library.email });
+      // refreshIdentity drops the session if the server rejects it, so a token
+      // that parsed but is expired or forged must not be reported as a sign-in.
+      if (!library.signedIn) {
+        testSet.setStatus('THAT LINK WAS REJECTED — ASK FOR A NEW ONE', 'bad');
+      } else {
+        testSet.setStatus(library.admin ? 'SIGNED IN' : 'SIGNED IN, BUT NOT A CURATOR',
+          library.admin ? 'ok' : 'bad');
+      }
+    } catch (err) {
+      testSet.setStatus(String(err.message || err).toUpperCase().slice(0, 140), 'bad');
     }
   };
 
@@ -214,6 +238,26 @@ const idleMusic = {
 // ---------------------------------------------------------------------------
 // Track loading
 // ---------------------------------------------------------------------------
+// While the viewer is on the OTHER tab, this one is not compositing, so
+// requestAnimationFrame stops and with it the whole analysis loop. That matters
+// specifically for tab capture, because changing the song means going to the
+// YouTube tab — exactly when we are blind. The gap between the two songs
+// happens while no frames run, so the change detector never sees it and the
+// arena comes back still wearing the previous song's reading.
+//
+// Coming back after being away long enough to have changed something is itself
+// the signal. Treat it as a possible new song rather than pretending we watched.
+let _hiddenAt = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { _hiddenAt = performance.now(); return; }
+  const away = (performance.now() - _hiddenAt) / 1000;
+  if (!engine.live || !identity || _hiddenAt === 0 || away < 3) return;
+  identity.resetLive();
+  choreo.resetLive();
+  _sinceNew = 0;
+  ui.toast('WELCOME BACK — RE-READING');
+});
+
 // ---------------------------------------------------------------------------
 // Live input: noticing that the song changed
 // ---------------------------------------------------------------------------
@@ -227,19 +271,46 @@ const idleMusic = {
 // be a change rather than a rest, followed by sound coming back.
 let _gap = 0;             // seconds of near-silence so far
 let _sawGap = false;      // a long enough one happened; waiting for audio again
+let _heardSound = false;  // there was music BEFORE the gap
 let _sinceNew = 1e9;      // stops a stuttering stream re-triggering repeatedly
 let _newSongCard = 0;
 
 const GAP_ENOUGH = 0.45;  // below this it is a breath, not a track change
 const RETRIGGER_LOCK = 8;
 
+// Capturing a tab that turns out to be making no sound is the most likely way
+// this goes wrong after the picker closes — the wrong tab, a paused video, or
+// the "share tab audio" box left unticked, which Chrome does not tick for you.
+// Until now that produced a flat pool and no explanation whatsoever.
+let _quietLive = 0;
+let _saidQuiet = false;
+
+function watchForQuietTab(music, dt) {
+  if (music.silence > 0.55) {
+    _quietLive += dt;
+    if (_quietLive > 5.5 && !_saidQuiet) {
+      _saidQuiet = true;
+      ui.toast('NO SOUND FROM THAT TAB — IS IT PLAYING, AND DID YOU TICK "SHARE TAB AUDIO"?');
+    }
+  } else {
+    _quietLive = 0;
+    _saidQuiet = false;      // say it again if it happens later, but not while it lasts
+  }
+}
+
 function watchForNewSong(music, dt) {
   _sinceNew += dt;
   if (music.silence > 0.55) {
     _gap += dt;
-    if (_gap > GAP_ENOUGH) _sawGap = true;
+    // A change of song is sound, then a gap, then sound. Without the first of
+    // those, the silence that exists before any audio has arrived counted as a
+    // gap, so connecting to a tab fired "NEW SONG" about half a second in —
+    // every single time, resetting the reading at the very moment it was
+    // starting to form one.
+    if (_gap > GAP_ENOUGH && _heardSound) _sawGap = true;
     return;
   }
+  _heardSound = true;
   if (_sawGap && _sinceNew > RETRIGGER_LOCK) {
     _sinceNew = 0;
     identity.resetLive();   // stop defending the previous song's reading
@@ -397,6 +468,8 @@ async function beginLive(getStream, label, kind) {
   // live-inference path it already keeps for exactly this case.
   analyser.resetTrack(0.09);
   choreo.resetTrack(null);
+  _gap = 0; _sawGap = false; _heardSound = false; _sinceNew = 1e9;
+  _quietLive = 0; _saidQuiet = false;
   identity = SongIdentity.live();
   identity.paletteMode = settings.get('palette');
   identity._recompute();
@@ -537,6 +610,7 @@ function frame(now) {
       // measures them; without this the swell is a constant for every song.
       identity.observeLive(music, dtSmooth);
       watchForNewSong(music, dtSmooth);
+      watchForQuietTab(music, dtSmooth);
     }
   }
 

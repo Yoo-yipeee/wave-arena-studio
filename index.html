@@ -422,6 +422,26 @@
     font-size:8px;line-height:1.9;color:rgba(233,247,255,.3);
   }
   .ts-rows{display:flex;flex-direction:column}
+  /* Step two of "bring your own" — the song is playing elsewhere, capture it. */
+  .ts-pick{
+    margin:14px 0 4px;padding:16px 18px;border-radius:3px;
+    border:1px solid rgba(140,235,255,.45);
+    background:linear-gradient(180deg,rgba(18,52,84,.6),rgba(10,30,52,.5));
+    box-shadow:0 0 34px rgba(60,180,255,.14);
+  }
+  .ts-pick-h{font-size:9px;letter-spacing:.3em;color:#eaf8ff}
+  .ts-pick-s{
+    margin-top:9px;font-size:8.5px;line-height:1.95;letter-spacing:.13em;
+    color:rgba(233,247,255,.5);
+  }
+  .ts-pick-s b{color:rgba(233,247,255,.88);font-weight:400}
+  .ts-pick button{
+    margin-top:14px;font-family:inherit;font-size:9px;letter-spacing:.3em;
+    text-indent:.3em;padding:13px 26px;cursor:pointer;color:#fff;
+    background:rgba(24,70,112,.7);border:1px solid rgba(140,235,255,.65);
+    transition:all .3s ease;
+  }
+  .ts-pick button:hover{background:rgba(30,90,140,.8);box-shadow:0 0 30px rgba(60,180,255,.35)}
   .ts-note{
     padding:12px 10px;font-size:8.5px;line-height:2;letter-spacing:.14em;
     color:rgba(233,247,255,.4);
